@@ -1,6 +1,6 @@
 {
   "name": "anunciacao",
-  "version": "2.1.0",
+  "version": "2.1.1",
   "private": true,
   "type": "module",
   "scripts": {
@@ -27,13 +27,13 @@
     "vite": "^5.4.21",
     "wait-on": "^9.1.0"
   },
-  "productName": "Anunciação",
+  "productName": "Anunciacao",
   "description": "Anunciação — softphone SIP multi-linha da VINCII",
   "author": "VINCII <contato@vincii.com.br>",
   "main": "electron/main.js",
   "build": {
     "appId": "br.com.vincii.anunciacao",
-    "productName": "Anunciação",
+    "productName": "Anunciacao",
     "directories": {
       "output": "release",
       "buildResources": "build"
@@ -71,11 +71,10 @@
           ]
         }
       ],
-      "hardenedRuntime": true,
-      "entitlements": "build/entitlements.mac.plist",
-      "entitlementsInherit": "build/entitlements.mac.plist",
+      "hardenedRuntime": false,
       "extendInfo": {
-        "NSMicrophoneUsageDescription": "A Anunciação usa o microfone para as chamadas de voz."
+        "NSMicrophoneUsageDescription": "A Anunciação usa o microfone para as chamadas de voz.",
+        "CFBundleDisplayName": "Anunciação"
       }
     },
     "win": {
@@ -86,13 +85,16 @@
             "x64"
           ]
         }
-      ]
+      ],
+      "executableName": "Anunciacao"
     },
     "nsis": {
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
       "perMachine": false,
-      "createDesktopShortcut": true
+      "createDesktopShortcut": true,
+      "shortcutName": "Anunciação",
+      "uninstallDisplayName": "Anunciação"
     },
     "linux": {
       "target": [

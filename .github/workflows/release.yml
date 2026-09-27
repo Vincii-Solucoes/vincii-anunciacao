@@ -82,7 +82,7 @@ jobs:
           **macOS** — o app ainda não é assinado pela Apple. Na primeira abertura: botão direito no app → **Abrir** → **Abrir**.
           Se aparecer *"está danificado"*, rode uma vez no Terminal e abra de novo:
           ```
-          xattr -cr "/Applications/Anunciação.app"
+          xattr -cr "/Applications/Anunciacao.app"
           ```
 
           **Windows** — o instalador ainda não é assinado; se o SmartScreen avisar, clique em **Mais informações → Executar assim mesmo**.
