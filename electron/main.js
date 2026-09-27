@@ -28,6 +28,11 @@ let status = { online: 0, total: 0, ringing: 0, calls: 0, dnd: false };
 let flashTimer = null;
 let pendingDial = null;
 
+// Segurança: o app instalado não aceita depuração remota nem inspetor (exporiam as senhas decifradas).
+if (app.isPackaged && (app.commandLine.hasSwitch('remote-debugging-port') || app.commandLine.hasSwitch('remote-debugging-pipe') || process.argv.some((a) => /^--(inspect|remote-debugging|js-flags)/.test(a)))) {
+  app.exit(1);
+}
+
 // Dados sempre na pasta "Anunciacao" (mantém linhas e histórico mesmo com a troca do nome do app).
 // VINCII_USER_DATA permite perfis separados (ex.: testes com duas instâncias).
 app.setPath('userData', process.env.VINCII_USER_DATA || path.join(app.getPath('appData'), 'Anunciacao'));
@@ -224,7 +229,12 @@ function createTray() {
   updateTray();
 }
 
-function setSystem(patch) {
+const SYSTEM_KEYS = ['startAtLogin', 'startHidden', 'closeToTray', 'showOnIncoming'];
+
+function setSystem(input) {
+  // Só aceita as chaves conhecidas, com valores booleanos.
+  const patch = {};
+  for (const k of SYSTEM_KEYS) if (typeof input?.[k] === 'boolean') patch[k] = input[k];
   sys = { ...sys, ...patch };
   if ('startAtLogin' in patch || ('startHidden' in patch && sys.startAtLogin)) {
     try {
@@ -246,13 +256,36 @@ function ipc() {
     if (win && !win.isDestroyed()) win.webContents.send(channel, ...args);
   });
 
-  ipcMain.handle('net:udpOpen', (_e, opts) => sipnet.udpOpen(opts));
-  ipcMain.on('net:udpSend', (_e, id, data, port, host) => sipnet.udpSend(id, data, port, host));
-  ipcMain.handle('net:streamConnect', (_e, opts) => sipnet.streamConnect(opts));
-  ipcMain.on('net:streamSend', (_e, id, text) => sipnet.streamSend(id, text));
-  ipcMain.on('net:close', (_e, id) => sipnet.closeSocket(id));
-  ipcMain.handle('net:resolve', (_e, opts) => sipnet.resolveServer(opts));
-  ipcMain.handle('net:localAddress', (_e, opts) => sipnet.localAddressFor(opts));
+  // Validação dos argumentos vindos da janela (defesa em profundidade).
+  const isPort = (p) => Number.isInteger(p) && p > 0 && p < 65536;
+  const isHost = (h) => typeof h === 'string' && h.length > 0 && h.length < 256 && /^[\w.:-]+$/.test(h);
+  const isId = (id) => Number.isInteger(id) && id > 0;
+  const fromApp = (e) => e.senderFrame?.url?.startsWith(DEV_URL || 'app://vincii/');
+
+  ipcMain.handle('net:udpOpen', (e, opts = {}) => {
+    if (!fromApp(e)) throw new Error('origem inválida');
+    const range = Array.isArray(opts.range) && opts.range.every((p) => isPort(p) && p >= 1024) ? [Math.min(...opts.range), Math.max(...opts.range)] : undefined;
+    return sipnet.udpOpen({ port: 0, range });
+  });
+  ipcMain.on('net:udpSend', (e, id, data, port, host) => {
+    if (fromApp(e) && isId(id) && isPort(port) && isHost(host) && data instanceof Uint8Array && data.length <= 65507) sipnet.udpSend(id, data, port, host);
+  });
+  ipcMain.handle('net:streamConnect', (e, o = {}) => {
+    if (!fromApp(e) || !isHost(o.host) || !isPort(o.port)) throw new Error('parâmetros inválidos');
+    return sipnet.streamConnect({ host: o.host, port: o.port, secure: !!o.secure, servername: isHost(o.servername) ? o.servername : undefined, verify: o.verify !== false });
+  });
+  ipcMain.on('net:streamSend', (e, id, text) => {
+    if (fromApp(e) && isId(id) && typeof text === 'string' && text.length <= 65535) sipnet.streamSend(id, text);
+  });
+  ipcMain.on('net:close', (e, id) => fromApp(e) && isId(id) && sipnet.closeSocket(id));
+  ipcMain.handle('net:resolve', (e, o = {}) => {
+    if (!fromApp(e) || !isHost(o.host)) throw new Error('parâmetros inválidos');
+    return sipnet.resolveServer({ host: o.host, port: isPort(o.port) ? o.port : 0, transport: ['UDP', 'TCP', 'TLS'].includes(o.transport) ? o.transport : 'UDP' });
+  });
+  ipcMain.handle('net:localAddress', (e, o = {}) => {
+    if (!fromApp(e) || !isHost(o.address) || !isPort(o.port)) throw new Error('parâmetros inválidos');
+    return sipnet.localAddressFor({ address: o.address, port: o.port });
+  });
 
   ipcMain.handle('secret:encrypt', (_e, text) => {
     if (!text) return '';
@@ -274,6 +307,7 @@ function ipc() {
   // Log de diagnóstico SIP (um arquivo por dia em <userData>/logs, até 20 MB/dia, mantém 14 dias).
   const logDir = path.join(app.getPath('userData'), 'logs');
   ipcMain.on('log:write', (_e, text) => {
+    if (typeof text !== 'string' || text.length > 1024 * 1024) return;
     try {
       fs.mkdirSync(logDir, { recursive: true });
       const file = path.join(logDir, `sip-${new Date().toISOString().slice(0, 10)}.log`);
@@ -331,7 +365,7 @@ app.whenReady().then(async () => {
   protocol.handle('app', (req) => {
     const { pathname } = new URL(req.url);
     const file = path.normalize(path.join(DIST, decodeURIComponent(pathname)));
-    if (!file.startsWith(DIST)) return new Response('Forbidden', { status: 403 });
+    if (file !== DIST && !file.startsWith(DIST + path.sep)) return new Response('Forbidden', { status: 403 });
     return enet.fetch(pathToFileURL(file).toString());
   });
 
@@ -351,6 +385,15 @@ app.whenReady().then(async () => {
   createWindow(launchedHidden() && sys.startHidden);
   const n = extractDial(process.argv);
   if (n) deliverDial(n);
+});
+
+// Nenhuma janela, <webview> ou navegação extra pode ser criada pelo conteúdo.
+app.on('web-contents-created', (_e, contents) => {
+  contents.on('will-attach-webview', (ev) => ev.preventDefault());
+  contents.setWindowOpenHandler(({ url }) => {
+    if (/^https:\/\//.test(url)) shell.openExternal(url);
+    return { action: 'deny' };
+  });
 });
 
 app.on('activate', showWindow);

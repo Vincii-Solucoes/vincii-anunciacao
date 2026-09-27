@@ -103,6 +103,7 @@ class RtpSdh {
       rxMap,
       dtmf,
       send: sendOk && desc.port > 0,
+      server: this.session.userAgent.transport.server?.address,
     });
     this.session.data.onMedia?.({
       remoteHold: desc.direction === 'sendonly' || desc.direction === 'inactive' || desc.port === 0,

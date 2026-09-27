@@ -698,7 +698,7 @@ async function settingsModal() {
       }</div>
 
       <div class="modal-foot">
-        <span class="muted small">${DEMO ? 'Modo demonstração' : 'Vincii Anunciação 2.4'}</span>
+        <span class="muted small">${DEMO ? 'Modo demonstração' : 'Vincii Anunciação 2.5'}</span>
         <div class="row">
           <button type="button" class="btn btn-ghost" data-close>Cancelar</button>
           <button type="submit" class="btn btn-primary">Salvar</button>
@@ -1013,7 +1013,7 @@ async function start() {
   await store.unlock();
   if (DEMO && !store.accounts.length) seedDemo(store);
   phone = new Phone(store, { bridge: DEMO ? null : window.vincii, demo: DEMO });
-  window.vinciiDebug = { phone, store }; // inspeção pelo DevTools
+  if (import.meta.env.DEV || DEMO) window.vinciiDebug = { phone, store }; // inspeção só em desenvolvimento
   document.body.classList.add(`platform-${window.vincii?.platform || 'web'}`);
   applyTheme();
   darkQuery.addEventListener('change', applyTheme);

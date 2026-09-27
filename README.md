@@ -41,6 +41,17 @@ fechar mantém rodando na bandeja; iniciar com o sistema e iniciar minimizado; a
 
 **Áudio**: codecs por linha, com ordem de preferência — Opus, G.722 (HD), G.711 PCMA e PCMU e G.729; motor interno em 16 kHz; RTP simétrico, cancelamento de eco, supressão de ruído e controle de ganho.
 
+## Segurança
+
+- SIP via UDP só é aceito vindo do servidor/proxy da linha (bloqueia "chamadas fantasma" de scanners).
+- Áudio (RTP) só é aceito da origem negociada no SDP ou do servidor SIP (evita injeção/sequestro de áudio).
+- Transferências recebidas (REFER) só para destinos do próprio PBX (evita discagem forçada para fora).
+- Senhas no cofre do sistema (safeStorage); logs de diagnóstico com credenciais ocultas, apagados após 14 dias.
+- Electron isolado (contextIsolation, sandbox, CSP, sem webview/novas janelas), ponte IPC com validação de argumentos.
+- App instalado recusa depuração remota/inspetor; fusíveis do Electron: sem RunAsNode, sem NODE_OPTIONS,
+  sem --inspect, verificação de integridade do asar e carregamento só do asar.
+- Links `sip:`/`tel:` apenas preenchem o discador — a ligação só sai com o clique do usuário.
+
 ## Arquitetura
 
 - `electron/` — processo principal: janela, bandeja, inicialização, sockets UDP/TCP/TLS, criptografia.

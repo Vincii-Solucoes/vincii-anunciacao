@@ -2,6 +2,7 @@
 import { createCodec, CODECS } from './codecs.js';
 
 const DTMF_EVENTS = { '0': 0, '1': 1, '2': 2, '3': 3, '4': 4, '5': 5, '6': 6, '7': 7, '8': 8, '9': 9, '*': 10, '#': 11, A: 12, B: 13, C: 14, D: 15 };
+const isPrivate = (ip) => /^(10\.|127\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.|169\.254\.|0\.0\.0\.0$)/.test(String(ip || ''));
 const rand32 = () => (Math.random() * 0x100000000) >>> 0;
 
 export class RtpStream {
@@ -27,8 +28,11 @@ export class RtpStream {
   }
 
   // codec: id escolhido; pt: payload type para enviar; rxMap: payload types que podemos receber.
-  configure({ address, port, codec, pt, rxMap, dtmf, send }) {
+  configure({ address, port, codec, pt, rxMap, dtmf, send, server }) {
     if (!this.latched || !this.remote) this.remote = { address, port };
+    // Origens aceitas para o áudio: o endereço do SDP e o do servidor SIP.
+    this.allowed = new Set([address, server].filter(Boolean));
+    this.sdpPrivate = isPrivate(address);
     if (!this.tx || this.tx.codec.id !== codec) {
       this.tx?.codec.close();
       this.tx = { codec: createCodec(codec), pt };
@@ -113,6 +117,13 @@ export class RtpStream {
     if (b.length < 12 || b[0] >> 6 !== 2) return;
     const pt = b[1] & 0x7f;
     if (pt >= 72 && pt <= 76) return; // RTCP
+    // Segurança: só aceita áudio da origem negociada (evita injeção/sequestro de RTP).
+    // Se o SDP trouxe um IP privado (PBX atrás de NAT), trava na primeira origem que chegar.
+    const known = this.allowed?.has(rinfo.address) || (this.sdpPrivate && (!this.latched || rinfo.address === this.remote?.address));
+    if (!known) {
+      this.stats.dropped = (this.stats.dropped || 0) + 1;
+      return;
+    }
     // RTP simétrico: responde para onde o áudio realmente vem (atravessa NAT).
     if (!this.latched || this.remote?.address !== rinfo.address || this.remote?.port !== rinfo.port) {
       this.remote = { address: rinfo.address, port: rinfo.port };

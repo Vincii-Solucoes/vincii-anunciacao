@@ -97,6 +97,11 @@ export function streamConnect({ host, port, secure, servername, verify = true })
       let buf = Buffer.alloc(0);
       sock.on('data', (chunk) => {
         buf = Buffer.concat([buf, chunk]);
+        // Segurança: mensagens SIP legítimas são pequenas; fluxo malformado derruba a conexão.
+        if (buf.length > 256 * 1024) {
+          sock.destroy(new Error('Mensagem SIP grande demais'));
+          return;
+        }
         for (;;) {
           while (buf.length >= 2 && buf[0] === 0x0d && buf[1] === 0x0a) buf = buf.subarray(2); // keep-alive CRLF
           const end = buf.indexOf('\r\n\r\n');
@@ -104,6 +109,10 @@ export function streamConnect({ host, port, secure, servername, verify = true })
           const head = buf.subarray(0, end).toString('utf8');
           const m = head.match(/^(?:content-length|l)\s*:\s*(\d+)/im);
           const len = m ? Number(m[1]) : 0;
+          if (len > 128 * 1024) {
+            sock.destroy(new Error('Content-Length inválido'));
+            return;
+          }
           const total = end + 4 + len;
           if (buf.length < total) break;
           sendToRenderer('net:message', id, buf.subarray(0, total), { address: host, port });

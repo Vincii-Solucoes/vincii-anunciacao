@@ -118,7 +118,7 @@ export class Phone extends EventTarget {
       contactParams: { transport: (account.transport || 'UDP').toLowerCase() },
       viaHost,
       forceRport: true,
-      userAgentString: 'VinciiAnunciacao/2.4',
+      userAgentString: 'VinciiAnunciacao/2.5',
       noAnswerTimeout: 180,
       logLevel: 'warn',
       transportConstructor: this.Transport,
@@ -572,6 +572,20 @@ export class Phone extends EventTarget {
 
   // Recebemos um REFER (o outro lado nos transferiu): liga para o novo destino.
   _onReferred(line, call, referral) {
+    // Segurança: só aceita transferência para destinos do próprio PBX. Um REFER para outro
+    // servidor faria o app discar para qualquer lugar (risco de fraude de tarifação).
+    const host = String(referral.referTo?.uri?.host || '').toLowerCase();
+    const a = line.account;
+    const ok = [a.domain, String(a.proxy || '').split(':')[0], line.ua?.transport?.server?.address]
+      .filter(Boolean)
+      .map((h) => h.toLowerCase())
+      .includes(host);
+    if (!ok) {
+      log(`BLOQUEADO: transferência recebida para destino externo (${host || 'desconhecido'})`);
+      referral.reject({ statusCode: 403 }).catch(() => {});
+      this.emit('error', `Transferência recebida para ${host || 'destino desconhecido'} foi bloqueada por segurança`);
+      return;
+    }
     referral
       .accept()
       .then(() => {

@@ -72,7 +72,21 @@ export function makeTransportClass(net) {
           this.local = { address: r.localAddress, port: r.localPort };
         }
         this.contactAddr = `${this.local.address}:${this.local.port}`;
-        this.unsub.push(net.onMessage((id, data) => id === this.sockId && this._receive(data)));
+        this.unsub.push(
+          net.onMessage((id, data, rinfo) => {
+            if (id !== this.sockId) return;
+            // Segurança: em UDP só aceita SIP vindo do próprio servidor/proxy. Bloqueia "chamadas
+            // fantasma" de scanners que mandam INVITE direto para a porta aberta no NAT.
+            if (this.protocol === 'UDP' && rinfo?.address && rinfo.address !== this.server.address) {
+              this.dropped = (this.dropped || 0) + 1;
+              if (this.dropped <= 5 || this.dropped % 100 === 0) {
+                log(`${this.opts.account.name || this.opts.account.user} BLOQUEADO: SIP de origem desconhecida ${rinfo.address}:${rinfo.port} (${this.dropped} no total)`);
+              }
+              return;
+            }
+            this._receive(data);
+          })
+        );
         this.unsub.push(
           net.onClose((id) => {
             if (id !== this.sockId) return;
