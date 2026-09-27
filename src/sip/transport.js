@@ -2,6 +2,7 @@
 // Também cuida do que o SIP.js não faz para UDP: retransmissão de requisições,
 // keep-alive de NAT e reescrita de Via/Contact com o endereço real.
 import { TransportState, EmitterImpl } from 'sip.js';
+import { log } from '../log.js';
 
 const T1 = 500;
 const T2 = 4000;
@@ -83,6 +84,7 @@ export function makeTransportClass(net) {
           // Mantém o mapeamento NAT aberto (como o Linphone).
           this.keepalive = setInterval(() => this._raw('\r\n\r\n'), 25000);
         }
+        log(`${a.name || a.user} conectado: local ${this.local.address}:${this.local.port} -> servidor ${this.server.address}:${this.server.port} (${this.protocol})`);
         this._setState(TransportState.Connected);
       } catch (err) {
         this._cleanup();
@@ -125,6 +127,7 @@ export function makeTransportClass(net) {
       let out = message.replace(new RegExp(`^(Via:\\s*SIP/2\\.0/\\w+\\s+)${escapeRe(vh)}`, 'im'), `$1${via}`);
       out = out.split(vh).join(this.contactAddr);
       out = fixContentLength(out);
+      log(`${this.opts.account.name || this.opts.account.user} ENVIADO para ${this.server.address}:${this.server.port} (${this.protocol})`, out);
       this._raw(out);
       if (this.protocol === 'UDP' && /^[A-Z]+ /.test(out) && !out.startsWith('ACK ')) this._retransmit(out);
       return Promise.resolve();
@@ -152,6 +155,7 @@ export function makeTransportClass(net) {
     _receive(data) {
       let msg = typeof data === 'string' ? data : new TextDecoder().decode(data);
       if (!msg.trim()) return; // pong do keep-alive
+      log(`${this.opts.account.name || this.opts.account.user} RECEBIDO (${this.protocol})`, msg);
       if (msg.startsWith('SIP/2.0 ')) {
         const via = topVia(msg);
         const branch = branchOf(via);

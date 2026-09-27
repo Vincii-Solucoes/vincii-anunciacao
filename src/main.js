@@ -678,6 +678,13 @@ async function settingsModal() {
           : ''
       }
 
+      ${
+        NATIVE
+          ? `<h4>Diagnóstico</h4>
+             <div class="notice">As mensagens SIP de todas as linhas são gravadas em arquivo (senhas ocultas) para investigar falhas. <button type="button" class="link-btn" id="open-logs">Abrir pasta de logs</button></div>`
+          : ''
+      }
+
       <h4>Notificações</h4>
       ${chk('quietWhenBusy', s.quietWhenBusy !== false, 'Não interromper durante ligações: nova chamada aparece só no app, com um bipe discreto (sem pop-up, sem a janela saltar)')}
       <div class="notice">${
@@ -706,6 +713,7 @@ async function settingsModal() {
           applyTheme();
         })
       );
+      modal.querySelector('#open-logs')?.addEventListener('click', () => window.vincii.log.open());
       modal.querySelector('#ask-mic')?.addEventListener('click', async () => {
         try {
           const st = await navigator.mediaDevices.getUserMedia({ audio: true });

@@ -20,6 +20,10 @@ contextBridge.exposeInMainWorld('vincii', {
     onClose: on('net:close'),
     onError: on('net:error'),
   },
+  log: {
+    write: (text) => ipcRenderer.send('log:write', text),
+    open: () => ipcRenderer.send('log:open'),
+  },
   secret: {
     encrypt: (text) => ipcRenderer.invoke('secret:encrypt', text),
     decrypt: (data) => ipcRenderer.invoke('secret:decrypt', data),

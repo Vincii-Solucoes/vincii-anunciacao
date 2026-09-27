@@ -1,6 +1,7 @@
 import { app, BrowserWindow, Tray, Menu, nativeImage, nativeTheme, ipcMain, protocol, net as enet, shell, dialog, safeStorage, systemPreferences, session, Notification } from 'electron';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import fs from 'node:fs';
 import * as sipnet from './net.js';
 import { loadSystem, saveSystem, applyLoginItem, isLoginItemEnabled, launchedHidden } from './system.js';
 
@@ -269,6 +270,32 @@ function ipc() {
     return '';
   });
 
+
+  // Log de diagnóstico SIP (um arquivo por dia em <userData>/logs, até 20 MB/dia, mantém 14 dias).
+  const logDir = path.join(app.getPath('userData'), 'logs');
+  ipcMain.on('log:write', (_e, text) => {
+    try {
+      fs.mkdirSync(logDir, { recursive: true });
+      const file = path.join(logDir, `sip-${new Date().toISOString().slice(0, 10)}.log`);
+      if (fs.existsSync(file) && fs.statSync(file).size > 20 * 1024 * 1024) return;
+      fs.appendFileSync(file, text);
+    } catch {
+      /* disco cheio etc. */
+    }
+  });
+  ipcMain.on('log:open', () => {
+    fs.mkdirSync(logDir, { recursive: true });
+    shell.openPath(logDir);
+  });
+  try {
+    const limit = Date.now() - 14 * 864e5;
+    for (const f of fs.existsSync(logDir) ? fs.readdirSync(logDir) : []) {
+      const p = path.join(logDir, f);
+      if (fs.statSync(p).mtimeMs < limit) fs.rmSync(p, { force: true });
+    }
+  } catch {
+    /* ignora */
+  }
 
   ipcMain.handle('app:getSystem', () => ({ ...sys, startAtLogin: isLoginItemEnabled() || sys.startAtLogin }));
   ipcMain.handle('app:setSystem', (_e, patch) => setSystem(patch));

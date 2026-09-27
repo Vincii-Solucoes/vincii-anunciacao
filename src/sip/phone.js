@@ -5,6 +5,7 @@ import { makeSdhFactory } from './sdh.js';
 import { MediaEngine } from '../media/engine.js';
 import { FakeSession } from '../demo.js';
 import { enabledCodecs } from '../media/codecs.js';
+import { log } from '../log.js';
 
 const CONN_KEYS = ['user', 'domain', 'password', 'authUser', 'displayName', 'enabled', 'transport', 'proxy', 'expires', 'natDetect', 'tlsVerify'];
 
@@ -154,6 +155,7 @@ export class Phone extends EventTarget {
   }
 
   _setLine(line, status, error = '') {
+    if (line.status !== status || line.error !== error) log(`LINHA ${line.account.name || line.account.user}: ${status}${error ? ` — ${error}` : ''}`);
     line.status = status;
     line.error = error;
     this.changed();
@@ -621,6 +623,7 @@ export class Phone extends EventTarget {
     if (!this.calls.has(call.id)) return;
     this.calls.delete(call.id);
     clearTimeout(call.fwTimer);
+    call.rtpStats = this.engine?.streams.get(call.id)?.stats;
     this.engine?.close(call.id);
     if (call.conf) {
       const rest = [...this.calls.values()].filter((c) => c.conf);
@@ -657,6 +660,8 @@ export class Phone extends EventTarget {
       at: call.createdAt,
       duration: call.answeredAt ? Math.round((Date.now() - call.answeredAt) / 1000) : 0,
     });
+    const st = call.rtpStats;
+    log(`CHAMADA ${call.direction === 'in' ? 'recebida de' : 'para'} ${call.number} (${line?.account.name || ''}): ${result}${call.cause ? ` — ${call.cause}` : ''}${st ? ` | RTP enviados ${st.tx}, recebidos ${st.rx}` : ''}`);
     this.emit('ended', { call, result });
     this.changed();
   }
