@@ -4,6 +4,7 @@ import { makeTransportClass } from './transport.js';
 import { makeSdhFactory } from './sdh.js';
 import { MediaEngine } from '../media/engine.js';
 import { FakeSession } from '../demo.js';
+import { enabledCodecs } from '../media/codecs.js';
 
 const CONN_KEYS = ['user', 'domain', 'password', 'authUser', 'displayName', 'enabled', 'transport', 'proxy', 'expires', 'natDetect', 'tlsVerify'];
 
@@ -42,7 +43,7 @@ export class Phone extends EventTarget {
     if (bridge) {
       this.engine = new MediaEngine(bridge.net, store.settings);
       this.Transport = makeTransportClass(bridge.net);
-      this.sdhFactory = makeSdhFactory(this.engine, () => store.settings);
+      this.sdhFactory = makeSdhFactory(this.engine);
       this.engine.onLevel = (v) => this.emit('level', v);
     }
   }
@@ -114,7 +115,7 @@ export class Phone extends EventTarget {
       contactParams: { transport: (account.transport || 'UDP').toLowerCase() },
       viaHost,
       forceRport: true,
-      userAgentString: 'Anunciacao/2.1 (VINCII)',
+      userAgentString: 'Anunciacao/2.2 (VINCII)',
       noAnswerTimeout: 180,
       logLevel: 'warn',
       transportConstructor: this.Transport,
@@ -273,6 +274,7 @@ export class Phone extends EventTarget {
 
     session.data = {
       callId: call.id,
+      codecs: enabledCodecs(line.account.codecs),
       onMedia: (m) => {
         call.remoteHold = m.remoteHold;
         call.codec = m.codec;

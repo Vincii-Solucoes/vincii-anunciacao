@@ -1,24 +1,23 @@
 // SessionDescriptionHandler do SIP.js para áudio RTP "puro" (sem WebRTC), compatível
-// com qualquer PBX/operadora SIP. A mídia real fica no MediaEngine.
-import { parseSdp, buildSdp, codecOf, answerDirection } from '../media/sdp.js';
+// com qualquer PBX/operadora SIP. Os codecs vêm da configuração de cada linha.
+import { parseSdp, buildSdp, codecOf, ptMap, offerCodecs, answerDirection } from '../media/sdp.js';
+import { CODECS, opusSupported } from '../media/codecs.js';
 
-export function makeSdhFactory(engine, getSettings) {
-  return (session) => new RtpSdh(session, engine, getSettings);
+export function makeSdhFactory(engine) {
+  return (session) => new RtpSdh(session, engine);
 }
 
 class RtpSdh {
-  constructor(session, engine, getSettings) {
+  constructor(session, engine) {
     this.session = session;
     this.engine = engine;
-    this.getSettings = getSettings;
     this.callId = session.data?.callId;
     this.rtp = null;
-    this.remote = null; // último SDP remoto
-    this.pendingOffer = null; // SDP remoto aguardando nossa resposta
+    this.pendingOffer = null;
+    this.localOffer = null; // o que ofertamos (para interpretar a resposta)
     this.sessionId = Math.floor(Math.random() * 1e9);
     this.version = 0;
     this.localDirection = 'sendrecv';
-    this.chosenPt = null;
     this.state = 'stable'; // stable | have-local-offer | have-remote-offer
   }
 
@@ -26,32 +25,38 @@ class RtpSdh {
     return this.session.userAgent.transport.mediaAddress;
   }
 
-  _codecs() {
-    const pref = this.getSettings().codecs || [8, 0];
-    return pref.filter((pt) => pt === 0 || pt === 8);
+  // Codecs habilitados na linha, na ordem de preferência.
+  _allowed() {
+    const ids = (this.session.data?.codecs || ['PCMA', 'PCMU']).filter((id) => CODECS[id]);
+    return ids.filter((id) => id !== 'opus' || opusSupported());
   }
 
   async getDescription(options = {}) {
     const hold = !!options.hold;
     this.rtp = await this.engine.open(this.callId);
-    let codecs = this._codecs();
-    let dtmfPt = 101;
+    let codecs;
+    let dtmf;
     let direction = hold ? 'sendonly' : 'sendrecv';
 
     if (this.state === 'have-remote-offer' && this.pendingOffer) {
-      // Somos o lado que responde: escolhe o primeiro codec do ofertante que suportamos.
+      // Respondendo: primeiro codec da oferta (ordem do ofertante) que esta linha aceita.
       const offer = this.pendingOffer;
-      const pt = offer.fmts.find((f) => codecOf(offer, f) != null && codecs.includes(codecOf(offer, f)));
-      if (pt == null) throw new Error('Nenhum codec compatível (use PCMA/PCMU)');
-      this.chosenPt = pt;
-      codecs = [pt];
-      dtmfPt = offer.dtmfPt ?? 101;
+      const allowed = this._allowed();
+      const pt = offer.fmts.find((f) => allowed.includes(codecOf(offer, f)));
+      if (pt == null) throw new Error('Nenhum codec em comum com o outro lado');
+      const id = codecOf(offer, pt);
+      codecs = [{ id, pt }];
+      const clock = CODECS[id].clock === 48000 ? 48000 : 8000;
+      dtmf = offer.dtmf.filter((d) => d.clock === clock).slice(0, 1);
       direction = answerDirection(offer.direction, hold);
       this.pendingOffer = null;
       this.state = 'stable';
       this.localDirection = direction;
-      this._apply(offer);
+      this._apply(offer, { id, pt, rxMap: { [pt]: id } });
     } else {
+      ({ codecs, dtmf } = offerCodecs(this._allowed()));
+      if (!codecs.length) throw new Error('Nenhum codec habilitado nesta linha');
+      this.localOffer = { codecs, dtmf };
       this.state = 'have-local-offer';
       this.localDirection = direction;
     }
@@ -61,7 +66,7 @@ class RtpSdh {
       address: this.mediaAddress,
       port: this.rtp.localPort,
       codecs,
-      dtmfPt,
+      dtmf,
       direction,
     });
     return { body, contentType: 'application/sdp' };
@@ -72,31 +77,36 @@ class RtpSdh {
     if (!desc.port && !desc.fmts.length) throw new Error('SDP sem áudio');
     this.rtp = await this.engine.open(this.callId);
     if (this.state === 'have-local-offer') {
-      const pt = desc.fmts.find((f) => codecOf(desc, f) != null);
+      const allowed = this._allowed();
+      const pt = desc.fmts.find((f) => allowed.includes(codecOf(desc, f)));
       if (pt == null) throw new Error('Resposta sem codec compatível');
-      this.chosenPt = pt;
+      // Recebemos com os payload types que nós ofertamos; enviamos com os da resposta.
+      const rxMap = {};
+      for (const c of this.localOffer?.codecs || []) rxMap[c.pt] = c.id;
       this.state = 'stable';
-      this._apply(desc);
+      this._apply(desc, { id: codecOf(desc, pt), pt, rxMap: { ...rxMap, ...ptMap(desc) } });
     } else {
       this.pendingOffer = desc;
       this.state = 'have-remote-offer';
     }
   }
 
-  _apply(desc) {
-    this.remote = desc;
-    const codec = codecOf(desc, this.chosenPt);
+  _apply(desc, { id, pt, rxMap }) {
+    const clock = CODECS[id].clock === 48000 ? 48000 : 8000;
+    const dtmf = desc.dtmf.find((d) => d.clock === clock) || { pt: 101, clock };
     const sendOk = ['sendrecv', 'sendonly'].includes(this.localDirection) && ['sendrecv', 'recvonly'].includes(desc.direction);
     this.rtp.configure({
       address: desc.address,
       port: desc.port,
-      pt: codec,
-      dtmfPt: desc.dtmfPt ?? 101,
+      codec: id,
+      pt,
+      rxMap,
+      dtmf,
       send: sendOk && desc.port > 0,
     });
     this.session.data.onMedia?.({
       remoteHold: desc.direction === 'sendonly' || desc.direction === 'inactive' || desc.port === 0,
-      codec: codec === 0 ? 'PCMU' : 'PCMA',
+      codec: CODECS[id].short,
     });
   }
 

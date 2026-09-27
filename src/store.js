@@ -1,5 +1,7 @@
 // Persistência local (localStorage). O modo demonstração usa um namespace separado
 // para nunca misturar contas fictícias com as reais.
+import { DEFAULT_CODECS, normalizeCodecs } from './media/codecs.js';
+
 export const NATIVE = typeof window !== 'undefined' && !!window.vincii;
 export const DEMO = !NATIVE || new URLSearchParams(location.search).has('demo');
 const NS = DEMO ? 'anunciacao-demo' : 'anunciacao';
@@ -11,7 +13,6 @@ const DEFAULT_SETTINGS = {
   echoCancellation: true,
   noiseSuppression: true,
   autoGainControl: true,
-  codecs: [8, 0], // PCMA, PCMU
   dtmfMode: 'rfc2833',
   rtpMin: 10000,
   rtpMax: 20000,
@@ -36,6 +37,7 @@ export const ACCOUNT_DEFAULTS = {
   dnd: false,
   autoAnswer: false,
   forward: { mode: 'off', target: '', seconds: 20 },
+  codecs: DEFAULT_CODECS,
 };
 
 function load(key, fallback) {
@@ -55,7 +57,12 @@ function save(key, value) {
 }
 
 export const store = {
-  accounts: load('accounts', []).map((a) => ({ ...ACCOUNT_DEFAULTS, ...a, forward: { ...ACCOUNT_DEFAULTS.forward, ...(a.forward || {}) } })),
+  accounts: load('accounts', []).map((a) => ({
+    ...ACCOUNT_DEFAULTS,
+    ...a,
+    forward: { ...ACCOUNT_DEFAULTS.forward, ...(a.forward || {}) },
+    codecs: normalizeCodecs(a.codecs),
+  })),
   settings: { ...DEFAULT_SETTINGS, ...load('settings', {}) },
   history: load('history', []),
 

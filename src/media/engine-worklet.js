@@ -1,6 +1,7 @@
-// Processador de áudio em tempo real: captura do microfone, reamostragem 48k<->8k,
+// Processador de áudio em tempo real: captura do microfone, reamostragem 48k<->16k,
 // buffer de jitter por chamada e mixagem de conferência.
-const FRAME = 160; // 20 ms a 8 kHz
+const RATE = 16000; // taxa interna (banda larga)
+const FRAME = 320; // 20 ms
 
 class Resampler {
   // Reamostragem linear com filtro passa-baixa simples na redução.
@@ -29,13 +30,13 @@ class Resampler {
 class Engine extends AudioWorkletProcessor {
   constructor() {
     super();
-    this.down = new Resampler(sampleRate, 8000);
+    this.down = new Resampler(sampleRate, RATE);
     this.micBuf = [];
     this.out = new Float32Array(sampleRate); // fila circular de saída
     this.outR = 0;
     this.outW = 0;
     this.outLen = 0;
-    this.up = new Resampler(8000, sampleRate);
+    this.up = new Resampler(RATE, sampleRate);
     this.calls = new Map(); // id -> { q: number[], started, muted, held, conf, rec, level }
     this.port.onmessage = (e) => this.onMsg(e.data);
     this.tick = 0;
@@ -52,14 +53,14 @@ class Engine extends AudioWorkletProcessor {
       if (!c) return;
       const pcm = m.pcm;
       for (let i = 0; i < pcm.length; i++) c.q.push(pcm[i]);
-      if (c.q.length > 2400) c.q.splice(0, c.q.length - 800); // atraso > 300 ms: descarta excesso
+      if (c.q.length > 4800) c.q.splice(0, c.q.length - 1600); // atraso > 300 ms: descarta excesso
     }
   }
 
   popRx(c) {
     // Pré-carrega 60 ms antes de começar a tocar (absorve jitter da rede).
     if (!c.started) {
-      if (c.q.length < 480) return null;
+      if (c.q.length < 960) return null;
       c.started = true;
     }
     if (c.q.length < FRAME) {

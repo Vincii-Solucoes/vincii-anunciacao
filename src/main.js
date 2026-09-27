@@ -5,6 +5,7 @@ import { Phone } from './sip/phone.js';
 import { I } from './icons.js';
 import { unlockAudio, setRinger, dtmfTone } from './audio.js';
 import { seedDemo, randomCaller } from './demo.js';
+import { CODECS, normalizeCodecs, enabledCodecs, opusSupported } from './media/codecs.js';
 
 const COLORS = ['#00C9B1', '#4DA3FF', '#F5B83D', '#E86A92', '#9B7BFF', '#6BD16B'];
 const KEYS = [
@@ -27,7 +28,7 @@ const RESULT = {
 };
 const FWD = { off: 'Desativado', always: 'Sempre', busy: 'Se ocupado', noanswer: 'Se não atender' };
 
-const ui = { tab: 'dialer', selectedLine: null, panel: {}, transfer: {} };
+const ui = { tab: 'dialer', selectedLine: null, panel: {}, transfer: {}, themePreview: null };
 let phone;
 
 const $ = (s, r = document) => r.querySelector(s);
@@ -153,6 +154,7 @@ function renderLines() {
       const fw = a.forward || {};
       const chips = [
         `<span class="chip">${esc(a.transport || 'UDP')}</span>`,
+        `<span class="chip" title="Codecs desta linha, em ordem de preferência">${enabledCodecs(a.codecs).map((id) => esc(CODECS[id].short)).join(' · ')}</span>`,
         a.dnd ? `<span class="chip warn">Não perturbe</span>` : '',
         fw.mode && fw.mode !== 'off' && fw.target ? `<span class="chip">${I.forward}${esc(FWD[fw.mode])} → ${esc(fw.target)}</span>` : '',
         a.autoAnswer ? `<span class="chip">Atende sozinho</span>` : '',
@@ -392,7 +394,7 @@ const THEMES = { system: 'Sistema', light: 'Claro', dark: 'Escuro' };
 const darkQuery = window.matchMedia('(prefers-color-scheme: dark)');
 
 function applyTheme() {
-  const pref = store.settings.theme || 'system';
+  const pref = ui.themePreview || store.settings.theme || 'system';
   window.vincii?.app.setTheme(pref);
   const resolved = pref === 'system' ? (darkQuery.matches ? 'dark' : 'light') : pref;
   document.documentElement.dataset.theme = resolved;
@@ -425,7 +427,8 @@ function openModal(html, onMount) {
   root.innerHTML = `<div class="modal-backdrop"><div class="modal" role="dialog" aria-modal="true">${html}</div></div>`;
   const close = () => {
     root.innerHTML = '';
-    applyTheme(); // desfaz a prévia de tema não salva
+    ui.themePreview = null; // desfaz a prévia de tema não salva
+    applyTheme();
   };
   root.querySelector('.modal-backdrop').addEventListener('mousedown', (e) => {
     if (e.target === e.currentTarget) close();
@@ -471,6 +474,29 @@ function accountModal(id) {
         <label class="check"><input type="checkbox" name="tlsVerify" ${a.tlsVerify !== false ? 'checked' : ''} /> Verificar certificado TLS do servidor</label>
       </details>
 
+      <details open>
+        <summary>Codecs</summary>
+        <p class="muted small">Marque os codecs que esta linha pode usar. O primeiro da lista é o preferido; use as setas para mudar a ordem.</p>
+        <ul class="codec-list" id="codec-list">
+          ${normalizeCodecs(a.codecs)
+            .map(
+              (c) => `
+            <li data-codec="${c.id}">
+              <label class="codec-check">
+                <input type="checkbox" ${c.on ? 'checked' : ''} ${c.id === 'opus' && !opusSupported() ? 'disabled' : ''} />
+                <span><b>${esc(CODECS[c.id].label)}</b><small>${esc(CODECS[c.id].desc)}</small></span>
+              </label>
+              <span class="codec-rank"></span>
+              <div class="codec-move">
+                <button type="button" class="icon-btn sm" data-move="-1" title="Subir" aria-label="Subir">${I.up}</button>
+                <button type="button" class="icon-btn sm" data-move="1" title="Descer" aria-label="Descer">${I.down}</button>
+              </div>
+            </li>`
+            )
+            .join('')}
+        </ul>
+      </details>
+
       <details ${existing && ((fw.mode && fw.mode !== 'off') || a.dnd || a.autoAnswer) ? 'open' : ''}>
         <summary>Desvio e atendimento</summary>
         <div class="grid3">
@@ -494,9 +520,30 @@ function accountModal(id) {
     </form>`,
     (modal, close) => {
       const form = modal.querySelector('form');
+      const list = modal.querySelector('#codec-list');
+      const rank = () =>
+        [...list.children].forEach((li, i) => {
+          const on = li.querySelector('input').checked;
+          li.classList.toggle('off', !on);
+          li.querySelector('.codec-rank').textContent = on ? `${[...list.children].slice(0, i + 1).filter((x) => x.querySelector('input').checked).length}º` : '—';
+          li.querySelector('[data-move="-1"]').disabled = i === 0;
+          li.querySelector('[data-move="1"]').disabled = i === list.children.length - 1;
+        });
+      list.addEventListener('change', rank);
+      list.addEventListener('click', (e) => {
+        const b = e.target.closest('[data-move]');
+        if (!b) return;
+        const li = b.closest('li');
+        if (b.dataset.move === '-1' && li.previousElementSibling) list.insertBefore(li, li.previousElementSibling);
+        else if (b.dataset.move === '1' && li.nextElementSibling) list.insertBefore(li.nextElementSibling, li);
+        rank();
+        b.focus();
+      });
+      rank();
       form.addEventListener('submit', async (e) => {
         e.preventDefault();
         const f = Object.fromEntries(new FormData(form));
+        const codecs = [...list.children].map((li) => ({ id: li.dataset.codec, on: li.querySelector('input').checked }));
         const data = {
           ...ACCOUNT_DEFAULTS,
           id: existing?.id || uid(),
@@ -515,10 +562,13 @@ function accountModal(id) {
           dnd: !!f.dnd,
           autoAnswer: !!f.autoAnswer,
           forward: { mode: f.fwMode, target: f.fwTarget.trim(), seconds: Math.min(120, Math.max(5, Number(f.fwSeconds) || 20)) },
+          codecs,
           enabled: !!f.enabled,
         };
         const err = !data.user
           ? 'Informe o ramal/usuário SIP.'
+          : !codecs.some((c) => c.on)
+            ? 'Marque pelo menos um codec.'
           : !data.domain
             ? 'Informe o domínio ou servidor SIP.'
             : data.forward.mode !== 'off' && !data.forward.target
@@ -553,7 +603,6 @@ function accountModal(id) {
   );
 }
 
-const CODEC_PRESETS = { '8,0': 'PCMA (G.711 A-law) e PCMU', '0,8': 'PCMU (G.711 µ-law) e PCMA', 8: 'Somente PCMA', 0: 'Somente PCMU' };
 
 async function settingsModal() {
   const s = store.settings;
@@ -606,7 +655,6 @@ async function settingsModal() {
 
       <h4>Chamadas</h4>
       <div class="grid2">
-        <label class="field"><span>Codecs</span><select name="codecs">${Object.entries(CODEC_PRESETS).map(([k, v]) => opt(k, v, s.codecs.join(','))).join('')}</select></label>
         <label class="field"><span>Envio de DTMF</span><select name="dtmfMode">${opt('rfc2833', 'RFC 2833 / 4733 (RTP)', s.dtmfMode)}${opt('info', 'SIP INFO', s.dtmfMode)}</select></label>
       </div>
       ${chk('autoHold', s.autoHold, 'Colocar outras chamadas em espera ao atender ou retomar uma chamada')}
@@ -639,7 +687,7 @@ async function settingsModal() {
       }</div>
 
       <div class="modal-foot">
-        <span class="muted small">${DEMO ? 'Modo demonstração' : 'Anunciação 2.1'}</span>
+        <span class="muted small">${DEMO ? 'Modo demonstração' : 'Anunciação 2.2'}</span>
         <div class="row">
           <button type="button" class="btn btn-ghost" data-close>Cancelar</button>
           <button type="submit" class="btn btn-primary">Salvar</button>
@@ -647,15 +695,13 @@ async function settingsModal() {
       </div>
     </form>`,
     (modal, close) => {
-      const themeBefore = s.theme;
+      // Prévia do tema enquanto a janela está aberta; só grava ao salvar.
       modal.querySelectorAll('input[name="theme"]').forEach((r) =>
         r.addEventListener('change', () => {
-          s.theme = r.value;
+          ui.themePreview = r.value;
           applyTheme();
-          s.theme = themeBefore; // só confirma ao salvar
         })
       );
-      modal.querySelectorAll('[data-close]').forEach((b) => b.addEventListener('click', () => applyTheme()));
       modal.querySelector('#ask-mic')?.addEventListener('click', async () => {
         try {
           const st = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -683,13 +729,13 @@ async function settingsModal() {
           echoCancellation: !!f.echoCancellation,
           noiseSuppression: !!f.noiseSuppression,
           autoGainControl: !!f.autoGainControl,
-          codecs: f.codecs.split(',').map(Number),
           dtmfMode: f.dtmfMode,
           autoHold: !!f.autoHold,
           rtpMin,
           rtpMax: Math.max(rtpMin + 2, Number(f.rtpMax) || 20000),
         });
         s.theme = f.theme || 'system';
+        ui.themePreview = null;
         store.saveSettings();
         applyTheme();
         if (phone.engine) {
@@ -879,6 +925,7 @@ function bindEvents() {
     if ($('#modal-root').children.length) {
       if (e.key === 'Escape') {
         $('#modal-root').innerHTML = '';
+        ui.themePreview = null;
         applyTheme();
       }
       return;

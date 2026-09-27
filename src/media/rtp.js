@@ -1,5 +1,5 @@
-// Sessão RTP de um canal de áudio: empacota/desempacota G.711 e DTMF (RFC 4733).
-import { encode, decode } from './g711.js';
+// Sessão RTP de uma chamada: empacota/desempacota o codec negociado e DTMF (RFC 4733).
+import { createCodec, CODECS } from './codecs.js';
 
 const DTMF_EVENTS = { '0': 0, '1': 1, '2': 2, '3': 3, '4': 4, '5': 5, '6': 6, '7': 7, '8': 8, '9': 9, '*': 10, '#': 11, A: 12, B: 13, C: 14, D: 15 };
 const rand32 = () => (Math.random() * 0x100000000) >>> 0;
@@ -10,8 +10,10 @@ export class RtpStream {
     this.socketId = socketId;
     this.localPort = localPort;
     this.remote = null; // { address, port }
-    this.pt = 8;
-    this.dtmfPt = 101;
+    this.tx = null; // { codec, pt }
+    this.rxMap = {}; // pt -> id do codec
+    this.decoders = new Map(); // id -> instância
+    this.dtmf = { pt: 101, clock: 8000 };
     this.send = true;
     this.ssrc = rand32();
     this.seq = rand32() & 0xffff;
@@ -19,17 +21,26 @@ export class RtpStream {
     this.first = true;
     this.lastRxSeq = null;
     this.latched = false;
-    this.onAudio = null; // (Float32Array) => void
-    this.lastRx = 0;
+    this.onAudio = null; // (Float32Array 16 kHz) => void
     this.stats = { tx: 0, rx: 0 };
     this.dtmfBusy = Promise.resolve();
   }
 
-  configure({ address, port, pt, dtmfPt, send }) {
+  // codec: id escolhido; pt: payload type para enviar; rxMap: payload types que podemos receber.
+  configure({ address, port, codec, pt, rxMap, dtmf, send }) {
     if (!this.latched || !this.remote) this.remote = { address, port };
-    if (pt != null) this.pt = pt;
-    this.dtmfPt = dtmfPt ?? this.dtmfPt;
+    if (!this.tx || this.tx.codec.id !== codec) {
+      this.tx?.codec.close();
+      this.tx = { codec: createCodec(codec), pt };
+      this.first = true;
+    } else this.tx.pt = pt;
+    this.rxMap = { ...this.rxMap, ...rxMap };
+    if (dtmf) this.dtmf = dtmf;
     this.send = send;
+  }
+
+  get codecId() {
+    return this.tx?.codec.id || null;
   }
 
   _header(pt, marker, ts) {
@@ -50,24 +61,28 @@ export class RtpStream {
     this.stats.tx++;
   }
 
-  // pcm: Float32Array de 160 amostras (20 ms a 8 kHz)
+  // pcm: Float32Array de 320 amostras (20 ms a 16 kHz)
   sendAudio(pcm) {
+    const tx = this.tx;
+    if (!tx) return;
     if (!this.send) {
-      this.ts = (this.ts + pcm.length) >>> 0;
+      this.ts = (this.ts + tx.codec.tsInc) >>> 0;
       return;
     }
-    const payload = encode(this.pt, pcm);
-    const pkt = new Uint8Array(12 + payload.length);
-    pkt.set(this._header(this.pt, this.first, this.ts));
-    pkt.set(payload, 12);
-    this.first = false;
-    this.ts = (this.ts + pcm.length) >>> 0;
-    this._out(pkt);
+    tx.codec.encode(pcm, (payload) => {
+      const pkt = new Uint8Array(12 + payload.length);
+      pkt.set(this._header(tx.pt, this.first, this.ts));
+      pkt.set(payload, 12);
+      this.first = false;
+      this.ts = (this.ts + tx.codec.tsInc) >>> 0;
+      this._out(pkt);
+    });
   }
 
   sendDtmf(digit, durationMs = 160) {
     const ev = DTMF_EVENTS[String(digit).toUpperCase()];
-    if (ev == null) return;
+    if (ev == null || !this.tx) return;
+    const perFrame = this.dtmf.clock / 50;
     this.dtmfBusy = this.dtmfBusy.then(
       () =>
         new Promise((resolve) => {
@@ -77,12 +92,11 @@ export class RtpStream {
           const tick = () => {
             i++;
             const end = i >= steps;
-            const dur = Math.min(i * 160, 0xffff);
+            const dur = Math.min(i * perFrame, 0xffff);
             const body = new Uint8Array([ev, (end ? 0x80 : 0) | 10, dur >> 8, dur & 0xff]);
-            const reps = end ? 3 : 1; // pacote final enviado 3x
-            for (let r = 0; r < reps; r++) {
+            for (let r = 0; r < (end ? 3 : 1); r++) {
               const pkt = new Uint8Array(16);
-              pkt.set(this._header(this.dtmfPt, i === 1 && r === 0, ts));
+              pkt.set(this._header(this.dtmf.pt, i === 1 && r === 0, ts));
               pkt.set(body, 12);
               this._out(pkt);
             }
@@ -104,9 +118,9 @@ export class RtpStream {
       this.remote = { address: rinfo.address, port: rinfo.port };
       this.latched = true;
     }
-    this.lastRx = Date.now();
     this.stats.rx++;
-    if (pt !== 0 && pt !== 8) return; // DTMF recebido e outros payloads são ignorados
+    const id = this.rxMap[pt];
+    if (!id || !CODECS[id]) return; // DTMF, conforto de ruído etc.
     const seq = (b[2] << 8) | b[3];
     if (this.lastRxSeq != null) {
       const diff = (seq - this.lastRxSeq) & 0xffff;
@@ -115,10 +129,21 @@ export class RtpStream {
     this.lastRxSeq = seq;
     const cc = b[0] & 0x0f;
     let off = 12 + cc * 4;
-    if (b[0] & 0x10) off += 4 + (((b[off + 2] << 8) | b[off + 3]) * 4);
+    if (b[0] & 0x10) off += 4 + ((b[off + 2] << 8) | b[off + 3]) * 4;
     let end = b.length;
     if (b[0] & 0x20) end -= b[b.length - 1];
     if (end <= off) return;
-    this.onAudio?.(decode(pt, b.subarray(off, end)));
+    let dec = this.decoders.get(id);
+    if (!dec) {
+      dec = createCodec(id);
+      this.decoders.set(id, dec);
+    }
+    dec.decode(b.slice(off, end), (pcm) => this.onAudio?.(pcm));
+  }
+
+  close() {
+    this.tx?.codec.close();
+    for (const d of this.decoders.values()) d.close();
+    this.decoders.clear();
   }
 }

@@ -16,6 +16,7 @@ npm start            # compila e abre o app
 npm run dist:mac     # .dmg / .zip   (rodar no macOS)
 npm run dist:win     # instalador NSIS (rodar no Windows)
 npm run dist:linux   # AppImage e .deb (rodar no Linux)
+npm run install:mac  # compila e instala em /Applications neste Mac
 ```
 
 Cada instalador deve ser gerado no próprio sistema. Ao enviar uma tag `vX.Y.Z`, o GitHub Actions
@@ -38,7 +39,7 @@ fechar mantém rodando na bandeja; iniciar com o sistema e iniciar minimizado; a
 **Visual**: tema claro e escuro (segue o sistema ou escolha manual), barra de título integrada ao layout,
 ícone próprio unindo o V da VINCII a um telefone (`npm run icons` regenera ícones do app e da bandeja).
 
-**Áudio**: G.711 PCMA/PCMU, RTP simétrico, cancelamento de eco, supressão de ruído e controle de ganho.
+**Áudio**: codecs por linha, com ordem de preferência — Opus, G.722 (HD), G.711 PCMA e PCMU; motor interno em 16 kHz; RTP simétrico, cancelamento de eco, supressão de ruído e controle de ganho.
 
 ## Arquitetura
 
@@ -48,5 +49,5 @@ fechar mantém rodando na bandeja; iniciar com o sistema e iniciar minimizado; a
 
 ## Pendências conhecidas
 
-- Sem codecs de banda larga (G.722/Opus), vídeo, chat/presença, SRTP/ZRTP e STUN/ICE para mídia.
+- Sem vídeo, chat/presença, SRTP/ZRTP e STUN/ICE para mídia.
 - Instaladores sem assinatura digital: o macOS/Windows vão exibir alerta até assinar (certificado Developer ID / Authenticode).

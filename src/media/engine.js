@@ -146,6 +146,7 @@ export class MediaEngine {
   close(callId) {
     const rtp = this.streams.get(callId);
     if (rtp) {
+      rtp.close();
       this.bridge.close(rtp.socketId);
       this.bySocket.delete(rtp.socketId);
       this.streams.delete(callId);
