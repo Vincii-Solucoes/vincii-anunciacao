@@ -278,6 +278,8 @@ export class Phone extends EventTarget {
       onMedia: (m) => {
         call.remoteHold = m.remoteHold;
         call.codec = m.codec;
+        // Mídia negociada (inclusive 183 com SDP): liga o fluxo RTP já na fase de progresso.
+        this.engine?.setState(call.id, { active: true, early: !call.answeredAt });
         this.changed();
       },
     };
@@ -289,7 +291,7 @@ export class Phone extends EventTarget {
         if (!call.answeredAt) call.answeredAt = Date.now();
         clearTimeout(call.fwTimer);
         if (!LIVE.includes(call.state)) call.state = call.held ? 'held' : 'active';
-        this.engine?.setState(call.id, { active: true, held: call.held, muted: call.muted, conf: call.conf });
+        this.engine?.setState(call.id, { active: true, early: false, held: call.held, muted: call.muted, conf: call.conf });
         this.changed();
       } else if (s === SessionState.Terminated) {
         this._finish(call);

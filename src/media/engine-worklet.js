@@ -43,7 +43,7 @@ class Engine extends AudioWorkletProcessor {
   }
 
   onMsg(m) {
-    if (m.type === 'add') this.calls.set(m.id, { q: [], started: false, muted: false, held: false, conf: false, active: false });
+    if (m.type === 'add') this.calls.set(m.id, { q: [], started: false, muted: false, held: false, conf: false, active: false, early: false });
     else if (m.type === 'remove') this.calls.delete(m.id);
     else if (m.type === 'state') {
       const c = this.calls.get(m.id);
@@ -85,7 +85,9 @@ class Engine extends AudioWorkletProcessor {
     for (const [id, c] of this.calls) {
       if (!c.active || c.held) continue;
       const out = new Float32Array(FRAME);
-      if (!c.muted) out.set(mic);
+      // Antes do atendimento (early media) envia silêncio: mantém o RTP fluindo pelo NAT
+      // sem transmitir o microfone.
+      if (!c.muted && !c.early) out.set(mic);
       if (c.conf) {
         for (const [oid, f] of rx) {
           if (oid === id || !this.calls.get(oid)?.conf) continue;
