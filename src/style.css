@@ -114,7 +114,7 @@ svg { width: 18px; height: 18px; flex: none; }
 /* ---------- Topbar (também é a barra de título da janela) ---------- */
 .topbar {
   display: flex; align-items: center; gap: 12px;
-  height: 60px; padding: 0 16px 0 20px; flex: none;
+  height: 64px; padding: 0 16px 0 20px; flex: none;
   background: var(--topbar-bg);
   border-bottom: 1px solid var(--border);
   position: sticky; top: 0; z-index: 10;
@@ -125,14 +125,14 @@ svg { width: 18px; height: 18px; flex: none; }
 .topbar button, .topbar .pill { -webkit-app-region: no-drag; }
 .platform-darwin .topbar { padding-left: 88px; }
 .platform-win32 .topbar { padding-right: 150px; }
-.brand { display: flex; align-items: center; gap: 11px; }
+.brand { display: flex; align-items: center; gap: 12px; min-width: 0; }
 .brand-icon {
-  width: 36px; height: 36px; border-radius: 9px; flex: none; display: block;
+  width: 42px; height: 42px; border-radius: 10px; flex: none; display: block;
   box-shadow: 0 0 0 1px var(--border), 0 4px 14px rgba(0, 201, 177, 0.2);
 }
-.brand-text { display: flex; flex-direction: column; line-height: 1.1; }
-.brand-text strong { color: var(--text-strong); font-weight: 700; letter-spacing: 0.16em; font-size: 14px; }
-.brand-text span { color: var(--accent-text); font-weight: 600; font-size: 11px; letter-spacing: 0.04em; }
+.brand-text { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+.brand-text h1 { margin: 0; font-size: 17px; font-weight: 800; letter-spacing: -0.2px; line-height: 1.2; color: var(--text-strong); white-space: nowrap; }
+.brand-text p { margin: 0; font-size: 12px; color: var(--muted); white-space: nowrap; }
 .summary { flex: 1; display: flex; gap: 8px; justify-content: flex-end; flex-wrap: wrap; }
 .top-actions { display: flex; gap: 6px; }
 .pill {
@@ -543,5 +543,7 @@ summary { cursor: pointer; font-weight: 600; font-size: 13px; color: var(--accen
   .summary .pill:not(.ringing) { display: none; }
   .grid2, .grid3 { grid-template-columns: 1fr; }
   .topbar { padding-left: 16px; }
-  .brand-text span { display: none; }
+  .brand-text p { display: none; }
+  .brand-icon { width: 32px; height: 32px; }
+  .brand-text h1 { font-size: 15px; }
 }

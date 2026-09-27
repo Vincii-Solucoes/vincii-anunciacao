@@ -10,13 +10,30 @@ export const CODECS = {
   G722: { label: 'G.722', short: 'G.722', desc: 'Voz em HD (16 kHz), 64 kbit/s', rtpmap: 'G722/8000', clock: 8000, pt: 9 },
   PCMA: { label: 'G.711 A-law (PCMA)', short: 'PCMA', desc: 'Padrão das operadoras no Brasil', rtpmap: 'PCMA/8000', clock: 8000, pt: 8 },
   PCMU: { label: 'G.711 µ-law (PCMU)', short: 'PCMU', desc: 'Padrão na América do Norte', rtpmap: 'PCMU/8000', clock: 8000, pt: 0 },
+  G729: { label: 'G.729', short: 'G.729', desc: 'Econômico (8 kbit/s), comum em operadoras e links lentos', rtpmap: 'G729/8000', clock: 8000, pt: 18, fmtp: 'annexb=no' },
 };
+
+// G.729: bcg729 (GPLv3) compilado para WebAssembly, carregado sob demanda.
+let g729 = null;
+let g729Loading = null;
+export function loadG729() {
+  g729Loading ||= import('./g729/bcg729.mjs')
+    .then((m) => m.default())
+    .then((mod) => (g729 = mod))
+    .catch((err) => {
+      console.warn('G.729 indisponível', err);
+      g729Loading = null;
+    });
+  return g729Loading;
+}
+export const g729Available = () => !!g729;
 
 export const DEFAULT_CODECS = [
   { id: 'PCMA', on: true },
   { id: 'PCMU', on: true },
   { id: 'G722', on: true },
   { id: 'opus', on: false },
+  { id: 'G729', on: false },
 ];
 
 // Garante a lista completa (codecs novos entram desativados no fim).
@@ -35,7 +52,7 @@ export function codecIdFromRtpmap(enc) {
   return CODECS[name] ? name : null;
 }
 
-const STATIC_PT = { 0: 'PCMU', 8: 'PCMA', 9: 'G722' };
+const STATIC_PT = { 0: 'PCMU', 8: 'PCMA', 9: 'G722', 18: 'G729' };
 export const staticCodec = (pt) => STATIC_PT[pt] || null;
 
 // Suporte a Opus depende do WebCodecs do Chromium (presente no Electron).
@@ -124,6 +141,54 @@ export function createCodec(id) {
       encode: (pcm, cb) => cb(enc.encode(toInt16(pcm))),
       decode: (bytes, cb) => cb(toFloat(dec.decode(bytes))),
       close() {},
+    };
+  }
+
+  if (id === 'G729') {
+    if (!g729) throw new Error('G.729 ainda não carregado');
+    const M = g729;
+    const enc = M._initBcg729EncoderChannel(0); // sem VAD (annexb=no)
+    const dec = M._initBcg729DecoderChannel();
+    const inP = M._malloc(160);
+    const bitP = M._malloc(10);
+    const lenP = M._malloc(1);
+    const outP = M._malloc(160);
+    const ds = { prev: 0 };
+    const us = { prev: 0 };
+    let open = true;
+    return {
+      id,
+      tsInc,
+      encode(pcm, cb) {
+        if (!open) return;
+        const s = toInt16(down2(pcm, ds)); // 160 amostras a 8 kHz = 2 quadros G.729
+        const out = new Uint8Array(20);
+        for (let f = 0; f < 2; f++) {
+          M.HEAP16.set(s.subarray(f * 80, f * 80 + 80), inP >> 1);
+          M._bcg729Encoder(enc, inP, bitP, lenP);
+          out.set(M.HEAPU8.subarray(bitP, bitP + 10), f * 10);
+        }
+        cb(out);
+      },
+      decode(bytes, cb) {
+        if (!open) return;
+        const frames = Math.floor(bytes.length / 10);
+        if (!frames) return; // quadro SID (2 bytes) de supressão de silêncio
+        const pcm = new Int16Array(frames * 80);
+        for (let f = 0; f < frames; f++) {
+          M.HEAPU8.set(bytes.subarray(f * 10, f * 10 + 10), bitP);
+          M._bcg729Decoder(dec, bitP, 10, 0, 0, 0, outP);
+          pcm.set(M.HEAP16.subarray(outP >> 1, (outP >> 1) + 80), f * 80);
+        }
+        cb(up2(toFloat(pcm), us));
+      },
+      close() {
+        if (!open) return;
+        open = false;
+        M._closeBcg729EncoderChannel(enc);
+        M._closeBcg729DecoderChannel(dec);
+        [inP, bitP, lenP, outP].forEach((p) => M._free(p));
+      },
     };
   }
 

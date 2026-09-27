@@ -50,8 +50,8 @@ export function applyLoginItem(enabled) {
       [
         '[Desktop Entry]',
         'Type=Application',
-        'Name=Anunciação',
-        'Comment=Softphone SIP da VINCII',
+        'Name=Vincii Anunciação',
+        'Comment=Cliente VoIP da Vincii',
         `Exec=${[exe, ...args].map(q).join(' ')}`,
         'Terminal=false',
         'X-GNOME-Autostart-enabled=true',

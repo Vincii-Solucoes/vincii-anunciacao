@@ -72,9 +72,9 @@ jobs:
 
           | Sistema | Arquivo |
           |---|---|
-          | **Windows** (64 bits) | `Anunciacao-…-win-x64.exe` |
-          | **macOS** Apple Silicon (M1/M2/M3/M4) | `Anunciacao-…-mac-arm64.dmg` |
-          | **macOS** Intel | `Anunciacao-…-mac-x64.dmg` |
+          | **Windows** (64 bits) | `Vincii-Anunciacao-…-win-x64.exe` |
+          | **macOS** Apple Silicon (M1/M2/M3/M4) | `Vincii-Anunciacao-…-mac-arm64.dmg` |
+          | **macOS** Intel | `Vincii-Anunciacao-…-mac-x64.dmg` |
           | **Linux** | `.AppImage` (qualquer distro) ou `.deb` (Debian/Ubuntu) |
 
           ## Instalação
@@ -82,14 +82,14 @@ jobs:
           **macOS** — o app ainda não é assinado pela Apple. Na primeira abertura: botão direito no app → **Abrir** → **Abrir**.
           Se aparecer *"está danificado"*, rode uma vez no Terminal e abra de novo:
           ```
-          xattr -cr "/Applications/Anunciacao.app"
+          xattr -cr "/Applications/Vincii Anunciacao.app"
           ```
 
           **Windows** — o instalador ainda não é assinado; se o SmartScreen avisar, clique em **Mais informações → Executar assim mesmo**.
 
-          **Linux** — AppImage: `chmod +x Anunciacao-*.AppImage` e execute. A bandeja do sistema requer suporte a AppIndicator (no GNOME, a extensão *AppIndicator*).
+          **Linux** — AppImage: `chmod +x Vincii-Anunciacao-*.AppImage` e execute. A bandeja do sistema requer suporte a AppIndicator (no GNOME, a extensão *AppIndicator*).
 
-          **Requisito do PBX:** SIP via UDP, TCP ou TLS com codec G.711 (PCMA/PCMU).
+          **Requisito do PBX:** SIP via UDP, TCP ou TLS. Codecs por linha: Opus, G.722, G.711 (PCMA/PCMU) e G.729.
           NOTES
           sed -i 's/^          //' /tmp/notes.md
-          gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --title "Anunciação $GITHUB_REF_NAME" --notes-file /tmp/notes.md "${files[@]}"
+          gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --title "Vincii Anunciação $GITHUB_REF_NAME" --notes-file /tmp/notes.md "${files[@]}"

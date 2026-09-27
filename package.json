@@ -1,6 +1,6 @@
 {
   "name": "anunciacao",
-  "version": "2.2.0",
+  "version": "2.3.0",
   "private": true,
   "type": "module",
   "scripts": {
@@ -28,13 +28,13 @@
     "vite": "^5.4.21",
     "wait-on": "^9.1.0"
   },
-  "productName": "Anunciacao",
-  "description": "Anunciação — softphone SIP multi-linha da VINCII",
+  "productName": "Vincii Anunciacao",
+  "description": "Vincii Anunciação — Cliente VoIP da Vincii",
   "author": "VINCII <contato@vincii.com.br>",
   "main": "electron/main.js",
   "build": {
     "appId": "br.com.vincii.anunciacao",
-    "productName": "Anunciacao",
+    "productName": "Vincii Anunciacao",
     "directories": {
       "output": "release",
       "buildResources": "build"
@@ -74,8 +74,8 @@
       ],
       "hardenedRuntime": false,
       "extendInfo": {
-        "NSMicrophoneUsageDescription": "A Anunciação usa o microfone para as chamadas de voz.",
-        "CFBundleDisplayName": "Anunciação"
+        "NSMicrophoneUsageDescription": "O Vincii Anunciação usa o microfone para as chamadas de voz.",
+        "CFBundleDisplayName": "Vincii Anunciação"
       }
     },
     "win": {
@@ -87,15 +87,15 @@
           ]
         }
       ],
-      "executableName": "Anunciacao"
+      "executableName": "Vincii Anunciacao"
     },
     "nsis": {
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
       "perMachine": false,
       "createDesktopShortcut": true,
-      "shortcutName": "Anunciação",
-      "uninstallDisplayName": "Anunciação"
+      "shortcutName": "Vincii Anunciação",
+      "uninstallDisplayName": "Vincii Anunciação"
     },
     "linux": {
       "target": [
@@ -122,16 +122,18 @@
       "executableName": "anunciacao",
       "desktop": {
         "entry": {
-          "Name": "Anunciação"
+          "Name": "Vincii Anunciação",
+          "Comment": "Cliente VoIP da Vincii"
         }
       }
     },
-    "artifactName": "Anunciacao-${version}-${os}-${arch}.${ext}",
+    "artifactName": "Vincii-Anunciacao-${version}-${os}-${arch}.${ext}",
     "publish": null
   },
   "repository": {
     "type": "git",
     "url": "https://github.com/Vincii-Solucoes/vincii-anunciacao.git"
   },
-  "homepage": "https://vincii.com.br"
+  "homepage": "https://vincii.com.br",
+  "license": "GPL-3.0-or-later"
 }

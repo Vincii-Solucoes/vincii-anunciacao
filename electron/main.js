@@ -27,8 +27,9 @@ let status = { online: 0, total: 0, ringing: 0, calls: 0, dnd: false };
 let flashTimer = null;
 let pendingDial = null;
 
-// Permite perfis separados (ex.: testes com duas instâncias).
-if (process.env.VINCII_USER_DATA) app.setPath('userData', process.env.VINCII_USER_DATA);
+// Dados sempre na pasta "Anunciacao" (mantém linhas e histórico mesmo com a troca do nome do app).
+// VINCII_USER_DATA permite perfis separados (ex.: testes com duas instâncias).
+app.setPath('userData', process.env.VINCII_USER_DATA || path.join(app.getPath('appData'), 'Anunciacao'));
 
 if (!app.requestSingleInstanceLock()) {
   app.quit();
@@ -42,7 +43,7 @@ protocol.registerSchemesAsPrivileged([
 
 app.setAppUserModelId('br.com.vincii.anunciacao');
 // Cabeçalhos HTTP só aceitam ASCII: o nome "Anunciação" não pode ir no User-Agent.
-app.userAgentFallback = app.userAgentFallback.replace(/Anuncia\S*?\//, 'Anunciacao/').replace(/[^\x20-\x7e]/g, '');
+app.userAgentFallback = app.userAgentFallback.replace(/[^\x20-\x7e]/g, '');
 
 /* ---------- Links sip: / tel: ---------- */
 
@@ -92,14 +93,14 @@ function createWindow(hidden) {
     minHeight: 560,
     show: false,
     backgroundColor: THEME[resolvedTheme()].bg,
-    title: 'Anunciação',
+    title: 'Vincii Anunciação',
     icon: ICON,
     autoHideMenuBar: true,
     // Barra de título integrada ao layout: semáforos no macOS, botões sobrepostos no Windows.
     ...(process.platform === 'darwin'
       ? { titleBarStyle: 'hiddenInset', trafficLightPosition: { x: 18, y: 21 } }
       : process.platform === 'win32'
-        ? { titleBarStyle: 'hidden', titleBarOverlay: { color: THEME[resolvedTheme()].bar, symbolColor: THEME[resolvedTheme()].symbol, height: 60 } }
+        ? { titleBarStyle: 'hidden', titleBarOverlay: { color: THEME[resolvedTheme()].bar, symbolColor: THEME[resolvedTheme()].symbol, height: 64 } }
         : {}),
     webPreferences: {
       preload: path.join(__dirname, 'preload.cjs'),
@@ -118,7 +119,7 @@ function createWindow(hidden) {
     e.preventDefault();
     win.hide();
     if (!sys.trayHintShown && Notification.isSupported()) {
-      new Notification({ title: 'Anunciação', body: 'A Anunciação continua rodando na bandeja e recebendo chamadas.', icon: LOGO }).show();
+      new Notification({ title: 'Vincii Anunciação', body: 'O Vincii Anunciação continua rodando na bandeja e recebendo chamadas.', icon: LOGO }).show();
       sys.trayHintShown = true;
       saveSystem(sys);
     }
@@ -143,7 +144,7 @@ function applyWindowTheme() {
   if (!win || win.isDestroyed()) return;
   const t = THEME[resolvedTheme()];
   win.setBackgroundColor(t.bg);
-  if (process.platform === 'win32') win.setTitleBarOverlay?.({ color: t.bar, symbolColor: t.symbol, height: 60 });
+  if (process.platform === 'win32') win.setTitleBarOverlay?.({ color: t.bar, symbolColor: t.symbol, height: 64 });
 }
 nativeTheme.on('updated', applyWindowTheme);
 
@@ -164,14 +165,14 @@ const iconBlank = nativeImage.createEmpty();
 
 function updateTray() {
   if (!tray) return;
-  const parts = [`Anunciação — ${status.online}/${status.total} linhas online`];
+  const parts = [`Vincii Anunciação — ${status.online}/${status.total} linhas online`];
   if (status.calls) parts.push(`${status.calls} chamada(s)`);
   if (status.ringing) parts.push('Chamada recebida!');
   if (status.dnd) parts.push('Não perturbe');
   tray.setToolTip(parts.join(' · '));
 
   const menu = Menu.buildFromTemplate([
-    { label: 'Abrir Anunciação', click: showWindow },
+    { label: 'Abrir Vincii Anunciação', click: showWindow },
     { label: `${status.online}/${status.total} linhas online`, enabled: false },
     { type: 'separator' },
     {
@@ -228,7 +229,7 @@ function setSystem(patch) {
     try {
       applyLoginItem(sys.startAtLogin);
     } catch (err) {
-      dialog.showErrorBox('Anunciação', `Não foi possível alterar a inicialização automática: ${err.message}`);
+      dialog.showErrorBox('Vincii Anunciação', `Não foi possível alterar a inicialização automática: ${err.message}`);
     }
   }
   saveSystem(sys);

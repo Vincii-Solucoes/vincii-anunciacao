@@ -1,6 +1,6 @@
-# Anunciação
+# Vincii Anunciação
 
-Softphone SIP da VINCII (o nome vem da obra de Leonardo da Vinci). App desktop (Windows, macOS e Linux) com várias linhas ao mesmo tempo, nos moldes do Linphone, na identidade visual da VINCII.
+Cliente VoIP da Vincii (o nome vem da obra de Leonardo da Vinci). App desktop (Windows, macOS e Linux) com várias linhas ao mesmo tempo, nos moldes do Linphone, na identidade visual da VINCII.
 
 ## Download
 
@@ -39,7 +39,7 @@ fechar mantém rodando na bandeja; iniciar com o sistema e iniciar minimizado; a
 **Visual**: tema claro e escuro (segue o sistema ou escolha manual), barra de título integrada ao layout,
 ícone próprio unindo o V da VINCII a um telefone (`npm run icons` regenera ícones do app e da bandeja).
 
-**Áudio**: codecs por linha, com ordem de preferência — Opus, G.722 (HD), G.711 PCMA e PCMU; motor interno em 16 kHz; RTP simétrico, cancelamento de eco, supressão de ruído e controle de ganho.
+**Áudio**: codecs por linha, com ordem de preferência — Opus, G.722 (HD), G.711 PCMA e PCMU e G.729; motor interno em 16 kHz; RTP simétrico, cancelamento de eco, supressão de ruído e controle de ganho.
 
 ## Arquitetura
 
@@ -51,3 +51,9 @@ fechar mantém rodando na bandeja; iniciar com o sistema e iniciar minimizado; a
 
 - Sem vídeo, chat/presença, SRTP/ZRTP e STUN/ICE para mídia.
 - Instaladores sem assinatura digital: o macOS/Windows vão exibir alerta até assinar (certificado Developer ID / Authenticode).
+
+## Licença
+
+GPL-3.0-or-later (veja `LICENSE`). O codec G.729 usa o [bcg729](https://github.com/BelledonneCommunications/bcg729)
+da Belledonne Communications (GPLv3), versão 1.1.1, cujo código-fonte está em `vendor/bcg729` e é compilado para
+WebAssembly com `sh scripts/build-g729.sh` (requer Docker).

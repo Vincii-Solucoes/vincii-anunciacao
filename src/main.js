@@ -5,7 +5,7 @@ import { Phone } from './sip/phone.js';
 import { I } from './icons.js';
 import { unlockAudio, setRinger, dtmfTone } from './audio.js';
 import { seedDemo, randomCaller } from './demo.js';
-import { CODECS, normalizeCodecs, enabledCodecs, opusSupported } from './media/codecs.js';
+import { CODECS, normalizeCodecs, enabledCodecs, opusSupported, loadG729 } from './media/codecs.js';
 
 const COLORS = ['#00C9B1', '#4DA3FF', '#F5B83D', '#E86A92', '#9B7BFF', '#6BD16B'];
 const KEYS = [
@@ -66,8 +66,11 @@ function shell() {
   $('#app').innerHTML = `
   <header class="topbar">
     <div class="brand">
-      <img class="brand-icon" src="./brand.png" alt="" />
-      <div class="brand-text"><strong>ANUNCIAÇÃO</strong><span>por VINCII</span></div>
+      <img class="brand-icon" src="./brand.png" alt="Vincii Anunciação" draggable="false" />
+      <div class="brand-text">
+        <h1>Vincii Anunciação</h1>
+        <p>Cliente VoIP da Vincii</p>
+      </div>
     </div>
     <div class="summary" id="summary"></div>
     <div class="top-actions">
@@ -385,7 +388,7 @@ function updateRinger() {
   const busy = calls.some((c) => c.state !== 'ringing');
   const ringback = calls.some((c) => c.state === 'ringback' && !c.early);
   setRinger(ringing ? (busy ? 'waiting' : 'ring') : ringback ? 'ringback' : null);
-  document.title = ringing ? '📞 Chamada recebida — Anunciação' : 'Anunciação';
+  document.title = ringing ? '📞 Chamada recebida — Vincii Anunciação' : 'Vincii Anunciação';
 }
 
 /* ================= Tema ================= */
@@ -687,7 +690,7 @@ async function settingsModal() {
       }</div>
 
       <div class="modal-foot">
-        <span class="muted small">${DEMO ? 'Modo demonstração' : 'Anunciação 2.2'}</span>
+        <span class="muted small">${DEMO ? 'Modo demonstração' : 'Vincii Anunciação 2.3'}</span>
         <div class="row">
           <button type="button" class="btn btn-ghost" data-close>Cancelar</button>
           <button type="submit" class="btn btn-primary">Salvar</button>
@@ -995,6 +998,7 @@ function bindEvents() {
 }
 
 async function start() {
+  loadG729(); // carrega o G.729 (WebAssembly) em segundo plano
   await store.unlock();
   if (DEMO && !store.accounts.length) seedDemo(store);
   phone = new Phone(store, { bridge: DEMO ? null : window.vincii, demo: DEMO });

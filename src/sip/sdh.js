@@ -1,7 +1,7 @@
 // SessionDescriptionHandler do SIP.js para áudio RTP "puro" (sem WebRTC), compatível
 // com qualquer PBX/operadora SIP. Os codecs vêm da configuração de cada linha.
 import { parseSdp, buildSdp, codecOf, ptMap, offerCodecs, answerDirection } from '../media/sdp.js';
-import { CODECS, opusSupported } from '../media/codecs.js';
+import { CODECS, opusSupported, g729Available } from '../media/codecs.js';
 
 export function makeSdhFactory(engine) {
   return (session) => new RtpSdh(session, engine);
@@ -28,7 +28,7 @@ class RtpSdh {
   // Codecs habilitados na linha, na ordem de preferência.
   _allowed() {
     const ids = (this.session.data?.codecs || ['PCMA', 'PCMU']).filter((id) => CODECS[id]);
-    return ids.filter((id) => id !== 'opus' || opusSupported());
+    return ids.filter((id) => (id !== 'opus' || opusSupported()) && (id !== 'G729' || g729Available()));
   }
 
   async getDescription(options = {}) {
