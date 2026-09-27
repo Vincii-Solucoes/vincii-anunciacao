@@ -18,6 +18,8 @@ const THEME = {
   dark: { bg: '#050505', bar: '#070909', symbol: '#dfe4e4' },
   light: { bg: '#eef3f3', bar: '#fbfdfd', symbol: '#0a1515' },
 };
+// Padrão escuro desde a abertura (a janela aplica depois a preferência salva).
+nativeTheme.themeSource = 'dark';
 const resolvedTheme = () => (nativeTheme.shouldUseDarkColors ? 'dark' : 'light');
 
 let win = null;

@@ -98,6 +98,14 @@ await renderIcon({ inset: 100, shadow: true, file: p('build/icon.png') });
 await renderIcon({ inset: 100, shadow: true, file: p('public/icon.png'), size: 512 });
 await renderIcon({ inset: 0, shadow: false, file: p('public/brand.png'), size: 256 });
 
+// Linux: o tema de ícones (hicolor) só procura tamanhos padrão; um único PNG de 1024 px não aparece
+// no menu/dock do GNOME. Gera a pasta build/icons/NxN.png que o electron-builder instala.
+import('node:fs').then(({ mkdirSync }) => mkdirSync(p('build/icons'), { recursive: true }));
+await new Promise((r) => setTimeout(r, 50));
+for (const n of [16, 24, 32, 48, 64, 96, 128, 256, 512]) {
+  await sharp(p('build/icon.png')).resize(n, n, { kernel: 'lanczos3' }).png().toFile(p(`build/icons/${n}x${n}.png`));
+}
+
 // 3. Bandeja: colorido (Windows/Linux) e "template" preto (macOS se adapta a claro/escuro).
 async function trayIcon(size, template) {
   const w = Math.round(size * (template ? 0.95 : 1));

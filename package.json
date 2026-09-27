@@ -1,6 +1,6 @@
 {
   "name": "anunciacao",
-  "version": "2.5.0",
+  "version": "2.5.1",
   "private": true,
   "type": "module",
   "scripts": {
@@ -113,19 +113,16 @@
         }
       ],
       "category": "Network;Telephony",
-      "mimeTypes": [
-        "x-scheme-handler/sip",
-        "x-scheme-handler/tel",
-        "x-scheme-handler/callto"
-      ],
       "maintainer": "VINCII <contato@vincii.com.br>",
       "executableName": "anunciacao",
       "desktop": {
         "entry": {
           "Name": "Vincii Anunciação",
-          "Comment": "Cliente VoIP da Vincii"
+          "Comment": "Cliente VoIP da Vincii",
+          "StartupWMClass": "anunciacao"
         }
-      }
+      },
+      "icon": "build/icons"
     },
     "artifactName": "Vincii-Anunciacao-${version}-${os}-${arch}.${ext}",
     "publish": null,
@@ -146,5 +143,6 @@
     "url": "https://github.com/Vincii-Solucoes/vincii-anunciacao.git"
   },
   "homepage": "https://vincii.com.br",
-  "license": "GPL-3.0-or-later"
+  "license": "GPL-3.0-or-later",
+  "desktopName": "anunciacao.desktop"
 }

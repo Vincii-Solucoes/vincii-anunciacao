@@ -397,7 +397,7 @@ const THEMES = { system: 'Sistema', light: 'Claro', dark: 'Escuro' };
 const darkQuery = window.matchMedia('(prefers-color-scheme: dark)');
 
 function applyTheme() {
-  const pref = ui.themePreview || store.settings.theme || 'system';
+  const pref = ui.themePreview || store.settings.theme || 'dark';
   window.vincii?.app.setTheme(pref);
   const resolved = pref === 'system' ? (darkQuery.matches ? 'dark' : 'light') : pref;
   document.documentElement.dataset.theme = resolved;
@@ -639,7 +639,7 @@ async function settingsModal() {
         ${Object.entries(THEMES)
           .map(
             ([k, v]) =>
-              `<label><input type="radio" name="theme" value="${k}" ${(s.theme || 'system') === k ? 'checked' : ''} /><span>${
+              `<label><input type="radio" name="theme" value="${k}" ${(s.theme || 'dark') === k ? 'checked' : ''} /><span>${
                 k === 'system' ? I.monitor : k === 'light' ? I.sun : I.moon
               }${v}</span></label>`
           )
@@ -747,7 +747,7 @@ async function settingsModal() {
           rtpMin,
           rtpMax: Math.max(rtpMin + 2, Number(f.rtpMax) || 20000),
         });
-        s.theme = f.theme || 'system';
+        s.theme = f.theme || 'dark';
         ui.themePreview = null;
         store.saveSettings();
         applyTheme();
@@ -865,7 +865,7 @@ function bindEvents() {
         return settingsModal();
       case 'btn-theme': {
         const order = ['system', 'light', 'dark'];
-        const next = order[(order.indexOf(store.settings.theme || 'system') + 1) % 3];
+        const next = order[(order.indexOf(store.settings.theme || 'dark') + 1) % 3];
         setTheme(next);
         toast(`Tema: ${THEMES[next]}`);
         return;

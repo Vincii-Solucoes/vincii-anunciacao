@@ -18,7 +18,7 @@ const DEFAULT_SETTINGS = {
   rtpMax: 20000,
   dnd: false,
   quietWhenBusy: true, // sem pop-ups de nova chamada enquanto já está em ligação
-  theme: 'system', // system | light | dark
+  theme: 'dark', // padrão: escuro, independente do sistema (system | light | dark)
 };
 
 export const ACCOUNT_DEFAULTS = {
@@ -40,6 +40,17 @@ export const ACCOUNT_DEFAULTS = {
   forward: { mode: 'off', target: '', seconds: 20 },
   codecs: DEFAULT_CODECS,
 };
+
+// A partir da 2.5.1 o padrão é o tema escuro: aplica uma única vez a quem vem de versões
+// anteriores (depois disso a escolha nas Configurações é respeitada).
+function migrateSettings(s) {
+  if (!s.themeDefaultDark) {
+    s.theme = 'dark';
+    s.themeDefaultDark = true;
+    save('settings', s);
+  }
+  return s;
+}
 
 function load(key, fallback) {
   try {
@@ -64,7 +75,7 @@ export const store = {
     forward: { ...ACCOUNT_DEFAULTS.forward, ...(a.forward || {}) },
     codecs: normalizeCodecs(a.codecs),
   })),
-  settings: { ...DEFAULT_SETTINGS, ...load('settings', {}) },
+  settings: migrateSettings({ ...DEFAULT_SETTINGS, ...load('settings', {}) }),
   history: load('history', []),
 
   // No app desktop, a senha é gravada criptografada pelo cofre do sistema (safeStorage).
