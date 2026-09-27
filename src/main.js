@@ -679,6 +679,7 @@ async function settingsModal() {
       }
 
       <h4>Notificações</h4>
+      ${chk('quietWhenBusy', s.quietWhenBusy !== false, 'Não interromper durante ligações: nova chamada aparece só no app, com um bipe discreto (sem pop-up, sem a janela saltar)')}
       <div class="notice">${
         notif === 'granted'
           ? 'Notificações de chamada recebida ativadas.'
@@ -690,7 +691,7 @@ async function settingsModal() {
       }</div>
 
       <div class="modal-foot">
-        <span class="muted small">${DEMO ? 'Modo demonstração' : 'Vincii Anunciação 2.3'}</span>
+        <span class="muted small">${DEMO ? 'Modo demonstração' : 'Vincii Anunciação 2.4'}</span>
         <div class="row">
           <button type="button" class="btn btn-ghost" data-close>Cancelar</button>
           <button type="submit" class="btn btn-primary">Salvar</button>
@@ -734,6 +735,7 @@ async function settingsModal() {
           autoGainControl: !!f.autoGainControl,
           dtmfMode: f.dtmfMode,
           autoHold: !!f.autoHold,
+          quietWhenBusy: !!f.quietWhenBusy,
           rtpMin,
           rtpMax: Math.max(rtpMin + 2, Number(f.rtpMax) || 20000),
         });
@@ -949,6 +951,7 @@ function bindEvents() {
   phone.addEventListener('change', renderAll);
   phone.addEventListener('history', renderHistory);
   phone.addEventListener('incoming', ({ detail: call }) => {
+    if (store.settings.quietWhenBusy && phone.inCall()) return; // só o cartão e o bipe de chamada em espera
     if (!document.hasFocus() && 'Notification' in window && Notification.permission === 'granted') {
       const n = new Notification(`Chamada recebida — ${lineName(call.accountId)}`, {
         body: call.name ? `${call.name} · ${fmtNumber(call.number)}` : fmtNumber(call.number),

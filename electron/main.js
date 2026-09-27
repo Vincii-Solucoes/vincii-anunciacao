@@ -275,7 +275,7 @@ function ipc() {
   ipcMain.on('app:status', (_e, s) => {
     const wasRinging = status.ringing;
     status = { ...status, ...s };
-    if (status.ringing > wasRinging) {
+    if (status.ringing > wasRinging && status.alert !== false) {
       if (sys.showOnIncoming && win) {
         if (!win.isVisible()) win.showInactive();
         win.flashFrame(true);

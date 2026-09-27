@@ -64,6 +64,8 @@ export class Phone extends EventTarget {
       online: lines.filter((l) => l.status === 'registered').length,
       total: lines.length,
       ringing: calls.filter((c) => c.state === 'ringing').length,
+      // Em ligação e com "não interromper": a janela não salta nem o Dock pula.
+      alert: !(this.store.settings.quietWhenBusy && calls.some((c) => c.state !== 'ringing')),
       calls: calls.length,
       dnd: !!this.store.settings.dnd,
     });
@@ -115,7 +117,7 @@ export class Phone extends EventTarget {
       contactParams: { transport: (account.transport || 'UDP').toLowerCase() },
       viaHost,
       forceRport: true,
-      userAgentString: 'VinciiAnunciacao/2.3',
+      userAgentString: 'VinciiAnunciacao/2.4',
       noAnswerTimeout: 180,
       logLevel: 'warn',
       transportConstructor: this.Transport,
@@ -299,6 +301,10 @@ export class Phone extends EventTarget {
     });
     this.calls.set(call.id, call);
     return call;
+  }
+
+  inCall() {
+    return [...this.calls.values()].some((c) => c.state !== 'ringing');
   }
 
   _busy(exceptId) {

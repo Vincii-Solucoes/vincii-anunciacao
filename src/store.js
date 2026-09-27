@@ -17,6 +17,7 @@ const DEFAULT_SETTINGS = {
   rtpMin: 10000,
   rtpMax: 20000,
   dnd: false,
+  quietWhenBusy: true, // sem pop-ups de nova chamada enquanto já está em ligação
   theme: 'system', // system | light | dark
 };
 
