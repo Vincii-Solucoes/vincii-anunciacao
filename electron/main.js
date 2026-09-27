@@ -1,4 +1,4 @@
-import { app, BrowserWindow, Tray, Menu, nativeImage, ipcMain, protocol, net as enet, shell, dialog, safeStorage, systemPreferences, session, Notification } from 'electron';
+import { app, BrowserWindow, Tray, Menu, nativeImage, nativeTheme, ipcMain, protocol, net as enet, shell, dialog, safeStorage, systemPreferences, session, Notification } from 'electron';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import * as sipnet from './net.js';
@@ -8,7 +8,16 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.join(__dirname, '..');
 const DIST = path.join(ROOT, 'dist');
 const DEV_URL = process.env.VITE_DEV_SERVER_URL;
-const LOGO = path.join(app.isPackaged ? DIST : path.join(ROOT, 'public'), 'logo.png');
+const ASSETS = app.isPackaged ? DIST : path.join(ROOT, 'public');
+const ICON = path.join(ASSETS, 'icon.png');
+const LOGO = ICON;
+
+// Cores da barra de título (Windows) para cada tema, iguais às do topo do app.
+const THEME = {
+  dark: { bg: '#050505', bar: '#070909', symbol: '#dfe4e4' },
+  light: { bg: '#eef3f3', bar: '#fbfdfd', symbol: '#0a1515' },
+};
+const resolvedTheme = () => (nativeTheme.shouldUseDarkColors ? 'dark' : 'light');
 
 let win = null;
 let tray = null;
@@ -82,10 +91,16 @@ function createWindow(hidden) {
     minWidth: 380,
     minHeight: 560,
     show: false,
-    backgroundColor: '#050505',
+    backgroundColor: THEME[resolvedTheme()].bg,
     title: 'Anunciação',
-    icon: LOGO,
+    icon: ICON,
     autoHideMenuBar: true,
+    // Barra de título integrada ao layout: semáforos no macOS, botões sobrepostos no Windows.
+    ...(process.platform === 'darwin'
+      ? { titleBarStyle: 'hiddenInset', trafficLightPosition: { x: 18, y: 21 } }
+      : process.platform === 'win32'
+        ? { titleBarStyle: 'hidden', titleBarOverlay: { color: THEME[resolvedTheme()].bar, symbolColor: THEME[resolvedTheme()].symbol, height: 60 } }
+        : {}),
     webPreferences: {
       preload: path.join(__dirname, 'preload.cjs'),
       contextIsolation: true,
@@ -124,18 +139,24 @@ function createWindow(hidden) {
   else win.loadURL('app://vincii/index.html');
 }
 
+function applyWindowTheme() {
+  if (!win || win.isDestroyed()) return;
+  const t = THEME[resolvedTheme()];
+  win.setBackgroundColor(t.bg);
+  if (process.platform === 'win32') win.setTitleBarOverlay?.({ color: t.bar, symbolColor: t.symbol, height: 60 });
+}
+nativeTheme.on('updated', applyWindowTheme);
+
 /* ---------- Bandeja ---------- */
 
 function trayImage() {
-  const img = nativeImage.createFromPath(LOGO);
-  const size = process.platform === 'darwin' ? 18 : process.platform === 'linux' ? 24 : 16;
-  // Recorta só o "V" do logotipo, que é legível em tamanho pequeno.
-  const s = img.getSize();
-  const crop = img.crop({ x: Math.round(s.width * 0.22), y: Math.round(s.height * 0.13), width: Math.round(s.width * 0.58), height: Math.round(s.height * 0.58) });
-  const out = nativeImage.createEmpty();
-  out.addRepresentation({ scaleFactor: 1, buffer: crop.resize({ width: size, height: size, quality: 'best' }).toPNG() });
-  out.addRepresentation({ scaleFactor: 2, buffer: crop.resize({ width: size * 2, height: size * 2, quality: 'best' }).toPNG() });
-  return out;
+  // macOS: imagem "template" (preta) que o sistema adapta ao menu claro/escuro.
+  if (process.platform === 'darwin') {
+    const img = nativeImage.createFromPath(path.join(ASSETS, 'tray', 'trayTemplate.png'));
+    img.setTemplateImage(true);
+    return img;
+  }
+  return nativeImage.createFromPath(path.join(ASSETS, 'tray', process.platform === 'linux' ? 'tray-linux.png' : 'tray.png'));
 }
 
 let iconNormal;
@@ -264,6 +285,10 @@ function ipc() {
     updateTray();
   });
   ipcMain.on('app:show', showWindow);
+  ipcMain.on('app:theme', (_e, source) => {
+    nativeTheme.themeSource = ['light', 'dark'].includes(source) ? source : 'system';
+    applyWindowTheme();
+  });
   ipcMain.on('app:quit', () => {
     quitting = true;
     app.quit();
@@ -289,6 +314,9 @@ app.whenReady().then(async () => {
   if (process.platform === 'darwin' && systemPreferences.getMediaAccessStatus('microphone') !== 'granted') {
     systemPreferences.askForMediaAccess('microphone').catch(() => {});
   }
+
+  // Ícone no Dock durante o desenvolvimento (no app empacotado vem do .icns).
+  if (process.platform === 'darwin' && !app.isPackaged) app.dock?.setIcon(ICON);
 
   ipc();
   createTray();

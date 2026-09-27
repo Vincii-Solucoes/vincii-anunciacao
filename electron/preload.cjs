@@ -29,6 +29,7 @@ contextBridge.exposeInMainWorld('vincii', {
     setSystem: (patch) => ipcRenderer.invoke('app:setSystem', patch),
     status: (s) => ipcRenderer.send('app:status', s),
     show: () => ipcRenderer.send('app:show'),
+    setTheme: (source) => ipcRenderer.send('app:theme', source),
     quit: () => ipcRenderer.send('app:quit'),
     onDial: on('app:dial'),
     onDnd: on('app:dnd'),

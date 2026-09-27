@@ -1,3 +1,4 @@
+import '@fontsource-variable/inter';
 import './style.css';
 import { store, uid, DEMO, NATIVE, ACCOUNT_DEFAULTS } from './store.js';
 import { Phone } from './sip/phone.js';
@@ -64,12 +65,15 @@ function shell() {
   $('#app').innerHTML = `
   <header class="topbar">
     <div class="brand">
-      <img src="./logo.png" alt="" />
+      <img class="brand-icon" src="./brand.png" alt="" />
       <div class="brand-text"><strong>ANUNCIAÇÃO</strong><span>por VINCII</span></div>
     </div>
     <div class="summary" id="summary"></div>
-    <button class="icon-btn" id="btn-dnd" title="Não perturbe" aria-label="Não perturbe"></button>
-    <button class="icon-btn" id="btn-settings" title="Configurações" aria-label="Configurações">${I.settings}</button>
+    <div class="top-actions">
+      <button class="icon-btn" id="btn-theme" aria-label="Tema"></button>
+      <button class="icon-btn" id="btn-dnd" title="Não perturbe" aria-label="Não perturbe"></button>
+      <button class="icon-btn" id="btn-settings" title="Configurações" aria-label="Configurações">${I.settings}</button>
+    </div>
   </header>
   <main class="layout">
     <section class="panel lines-panel">
@@ -206,8 +210,8 @@ function renderCalls() {
   if (!calls.length) {
     $('#calls').innerHTML = `
       <div class="empty">
-        <img src="./logo.png" alt="" class="empty-logo" />
-        <p>Nenhuma chamada em andamento</p>
+        <div class="empty-art"><img src="./mark.png" alt="" /></div>
+        <p><strong>Nenhuma chamada em andamento</strong></p>
         <p class="muted">Chamadas recebidas em qualquer linha aparecem aqui, mesmo simultaneamente.</p>
       </div>`;
     return;
@@ -382,6 +386,29 @@ function updateRinger() {
   document.title = ringing ? '📞 Chamada recebida — Anunciação' : 'Anunciação';
 }
 
+/* ================= Tema ================= */
+
+const THEMES = { system: 'Sistema', light: 'Claro', dark: 'Escuro' };
+const darkQuery = window.matchMedia('(prefers-color-scheme: dark)');
+
+function applyTheme() {
+  const pref = store.settings.theme || 'system';
+  window.vincii?.app.setTheme(pref);
+  const resolved = pref === 'system' ? (darkQuery.matches ? 'dark' : 'light') : pref;
+  document.documentElement.dataset.theme = resolved;
+  const b = $('#btn-theme');
+  if (b) {
+    b.innerHTML = pref === 'system' ? I.monitor : pref === 'light' ? I.sun : I.moon;
+    b.title = `Tema: ${THEMES[pref]} (clique para alternar)`;
+  }
+}
+
+function setTheme(pref) {
+  store.settings.theme = pref;
+  store.saveSettings();
+  applyTheme();
+}
+
 /* ================= Toasts / Modal ================= */
 
 function toast(msg, kind = 'info') {
@@ -396,7 +423,10 @@ function toast(msg, kind = 'info') {
 function openModal(html, onMount) {
   const root = $('#modal-root');
   root.innerHTML = `<div class="modal-backdrop"><div class="modal" role="dialog" aria-modal="true">${html}</div></div>`;
-  const close = () => (root.innerHTML = '');
+  const close = () => {
+    root.innerHTML = '';
+    applyTheme(); // desfaz a prévia de tema não salva
+  };
   root.querySelector('.modal-backdrop').addEventListener('mousedown', (e) => {
     if (e.target === e.currentTarget) close();
   });
@@ -552,6 +582,18 @@ async function settingsModal() {
         <button type="button" class="icon-btn" data-close aria-label="Fechar">${I.close}</button>
       </div>
 
+      <h4>Aparência</h4>
+      <div class="segmented" role="radiogroup" aria-label="Tema">
+        ${Object.entries(THEMES)
+          .map(
+            ([k, v]) =>
+              `<label><input type="radio" name="theme" value="${k}" ${(s.theme || 'system') === k ? 'checked' : ''} /><span>${
+                k === 'system' ? I.monitor : k === 'light' ? I.sun : I.moon
+              }${v}</span></label>`
+          )
+          .join('')}
+      </div>
+
       <h4>Áudio</h4>
       ${needsPermission ? `<div class="notice">Permita o acesso ao microfone para ver os nomes dos dispositivos. <button type="button" class="link-btn" id="ask-mic">Permitir</button></div>` : ''}
       <div class="grid2">
@@ -597,7 +639,7 @@ async function settingsModal() {
       }</div>
 
       <div class="modal-foot">
-        <span class="muted small">${DEMO ? 'Modo demonstração' : 'Anunciação 2.0'}</span>
+        <span class="muted small">${DEMO ? 'Modo demonstração' : 'Anunciação 2.1'}</span>
         <div class="row">
           <button type="button" class="btn btn-ghost" data-close>Cancelar</button>
           <button type="submit" class="btn btn-primary">Salvar</button>
@@ -605,6 +647,15 @@ async function settingsModal() {
       </div>
     </form>`,
     (modal, close) => {
+      const themeBefore = s.theme;
+      modal.querySelectorAll('input[name="theme"]').forEach((r) =>
+        r.addEventListener('change', () => {
+          s.theme = r.value;
+          applyTheme();
+          s.theme = themeBefore; // só confirma ao salvar
+        })
+      );
+      modal.querySelectorAll('[data-close]').forEach((b) => b.addEventListener('click', () => applyTheme()));
       modal.querySelector('#ask-mic')?.addEventListener('click', async () => {
         try {
           const st = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -638,7 +689,9 @@ async function settingsModal() {
           rtpMin,
           rtpMax: Math.max(rtpMin + 2, Number(f.rtpMax) || 20000),
         });
+        s.theme = f.theme || 'system';
         store.saveSettings();
+        applyTheme();
         if (phone.engine) {
           if (speakerChanged) phone.engine.setSpeaker(s.speakerId);
           if (micChanged) phone.engine.restartMic().catch(() => toast('Não foi possível reabrir o microfone', 'error'));
@@ -751,6 +804,13 @@ function bindEvents() {
         return accountModal();
       case 'btn-settings':
         return settingsModal();
+      case 'btn-theme': {
+        const order = ['system', 'light', 'dark'];
+        const next = order[(order.indexOf(store.settings.theme || 'system') + 1) % 3];
+        setTheme(next);
+        toast(`Tema: ${THEMES[next]}`);
+        return;
+      }
       case 'btn-dnd':
         phone.setDnd(!store.settings.dnd);
         toast(store.settings.dnd ? 'Não perturbe ativado: chamadas serão recusadas' : 'Não perturbe desativado', store.settings.dnd ? 'warn' : 'ok');
@@ -817,7 +877,10 @@ function bindEvents() {
 
   document.addEventListener('keydown', (e) => {
     if ($('#modal-root').children.length) {
-      if (e.key === 'Escape') $('#modal-root').innerHTML = '';
+      if (e.key === 'Escape') {
+        $('#modal-root').innerHTML = '';
+        applyTheme();
+      }
       return;
     }
     if (e.target.closest('input, select, textarea') || e.metaKey || e.ctrlKey || e.altKey) return;
@@ -889,7 +952,11 @@ async function start() {
   if (DEMO && !store.accounts.length) seedDemo(store);
   phone = new Phone(store, { bridge: DEMO ? null : window.vincii, demo: DEMO });
   window.vinciiDebug = { phone, store }; // inspeção pelo DevTools
+  document.body.classList.add(`platform-${window.vincii?.platform || 'web'}`);
+  applyTheme();
+  darkQuery.addEventListener('change', applyTheme);
   shell();
+  applyTheme();
   bindEvents();
   phone.syncAccounts();
   if (!store.accounts.length) accountModal();

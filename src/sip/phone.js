@@ -114,7 +114,7 @@ export class Phone extends EventTarget {
       contactParams: { transport: (account.transport || 'UDP').toLowerCase() },
       viaHost,
       forceRport: true,
-      userAgentString: 'Anunciacao/2.0 (VINCII)',
+      userAgentString: 'Anunciacao/2.1 (VINCII)',
       noAnswerTimeout: 180,
       logLevel: 'warn',
       transportConstructor: this.Transport,

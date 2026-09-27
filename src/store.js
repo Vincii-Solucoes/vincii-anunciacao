@@ -16,6 +16,7 @@ const DEFAULT_SETTINGS = {
   rtpMin: 10000,
   rtpMax: 20000,
   dnd: false,
+  theme: 'system', // system | light | dark
 };
 
 export const ACCOUNT_DEFAULTS = {

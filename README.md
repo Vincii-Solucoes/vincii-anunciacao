@@ -35,6 +35,9 @@ atendimento automático; tom de chamada brasileiro; histórico.
 **Desktop**: ícone na bandeja (pisca ao tocar, menu com Não perturbe, iniciar com o sistema, sair);
 fechar mantém rodando na bandeja; iniciar com o sistema e iniciar minimizado; abre com links `sip:`/`tel:`/`callto:`.
 
+**Visual**: tema claro e escuro (segue o sistema ou escolha manual), barra de título integrada ao layout,
+ícone próprio unindo o V da VINCII a um telefone (`npm run icons` regenera ícones do app e da bandeja).
+
 **Áudio**: G.711 PCMA/PCMU, RTP simétrico, cancelamento de eco, supressão de ruído e controle de ganho.
 
 ## Arquitetura
