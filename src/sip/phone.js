@@ -16,7 +16,7 @@ const STATUS_TEXT = {
   407: 'Falha de autenticação no proxy',
   408: 'Sem resposta',
   410: 'Número não existe mais',
-  480: 'Destino indisponível',
+  480: 'Destino indisponível no PBX',
   484: 'Número incompleto',
   486: 'Ocupado',
   487: 'Cancelada',
@@ -620,6 +620,12 @@ export class Phone extends EventTarget {
         c.conf = false;
         this.engine?.setState(c.id, { conf: false });
       });
+    }
+
+    // Motivo da recusa guardado pelo transporte (quando o delegate não recebeu a resposta final).
+    if (!call.cause && !call.answeredAt && call.direction === 'out') {
+      const f = this.lines.get(call.accountId)?.ua?.transport?.finals?.get(call.session.request?.callId);
+      if (f) call.cause = `${statusText(f.code, f.reason)} (${f.code}${f.q850 ? `, Q.850 ${f.q850}` : ''})`;
     }
 
     let result = call.result;

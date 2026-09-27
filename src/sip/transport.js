@@ -26,6 +26,7 @@ export function makeTransportClass(net) {
       this.local = null; // { address, port }
       this.contactAddr = null; // "ip:porta" anunciado no Contact
       this.pending = new Map(); // branch -> timer de retransmissão
+      this.finals = new Map(); // Call-ID -> última resposta final de erro a um INVITE
       this.unsub = [];
       this.keepalive = null;
     }
@@ -160,6 +161,7 @@ export function makeTransportClass(net) {
           this.pending.delete(branch);
         }
         this._learnPublicAddress(msg, via);
+        this._rememberFinal(msg);
         // O SIP.js exige que o Via da resposta tenha exatamente o viaHost, sem porta.
         msg = msg.replace(
           /^((?:Via|v)\s*:\s*SIP\/2\.0\/\w+\s+)([^;\s,]+)/im,
@@ -173,6 +175,21 @@ export function makeTransportClass(net) {
       } catch (err) {
         this.logger?.error?.(String(err));
       }
+    }
+
+    // Guarda o motivo de recusas (>= 300) de INVITE: após o desafio de autenticação (401/407) o SIP.js
+    // reenvia o INVITE e o delegate original não recebe a resposta final.
+    _rememberFinal(msg) {
+      const m = msg.match(/^SIP\/2\.0 (\d{3}) ([^\r\n]*)/);
+      const c = cseqOf(msg);
+      if (!m || !c || c[2].toUpperCase() !== 'INVITE') return;
+      const code = Number(m[1]);
+      if (code < 300 || code === 401 || code === 407) return;
+      const callId = msg.match(/^(?:call-id|i)\s*:\s*([^\r\n]+)/im)?.[1]?.trim();
+      if (!callId) return;
+      const q850 = msg.match(/^Reason\s*:\s*Q\.850\s*;\s*cause=(\d+)/im)?.[1];
+      this.finals.set(callId, { code, reason: m[2].trim(), q850: q850 ? Number(q850) : null });
+      if (this.finals.size > 50) this.finals.delete(this.finals.keys().next().value);
     }
 
     // Usa received/rport da resposta ao REGISTER para descobrir o endereço público.
