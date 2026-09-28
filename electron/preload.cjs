@@ -37,6 +37,8 @@ contextBridge.exposeInMainWorld('vincii', {
     quit: () => ipcRenderer.send('app:quit'),
     onDial: on('app:dial'),
     onDnd: on('app:dnd'),
+    onShutdown: on('app:shutdown'),
+    shutdownDone: () => ipcRenderer.send('app:shutdown-done'),
     onSystem: on('app:system'),
   },
 });

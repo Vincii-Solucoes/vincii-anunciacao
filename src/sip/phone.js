@@ -30,6 +30,10 @@ const STATUS_TEXT = {
 };
 export const statusText = (code, reason) => STATUS_TEXT[code] || (code ? `${code} ${reason || ''}`.trim() : reason || 'Falha na chamada');
 
+// Cópia dos dados de conexão: a interface altera o objeto da conta no lugar, então a comparação
+// precisa ser contra o que estava em uso quando a linha foi iniciada.
+const connOf = (acc) => JSON.stringify(CONN_KEYS.map((k) => acc[k]));
+
 const token = (n) => Array.from({ length: n }, () => 'abcdefghijklmnopqrstuvwxyz0123456789'[(Math.random() * 36) | 0]).join('');
 const LIVE = ['active', 'held'];
 
@@ -82,7 +86,7 @@ export class Phone extends EventTarget {
     const next = new Map();
     for (const acc of accounts) {
       const line = this.lines.get(acc.id);
-      if (line && CONN_KEYS.every((k) => line.account[k] === acc[k])) {
+      if (line && line.conn === connOf(acc)) {
         line.account = acc;
         next.set(acc.id, line);
       } else {
@@ -95,7 +99,7 @@ export class Phone extends EventTarget {
   }
 
   _startLine(account) {
-    const line = { account, ua: null, registerer: null, status: 'disabled', error: '', stopped: false, retry: null, retryDelay: 15000, watchdog: null };
+    const line = { account, conn: connOf(account), ua: null, registerer: null, status: 'disabled', error: '', stopped: false, retry: null, retryDelay: 15000, watchdog: null };
     if (!account.enabled) return line;
     if (this.demo || !this.bridge) {
       line.status = 'registered';
@@ -218,21 +222,36 @@ export class Phone extends EventTarget {
     }
   }
 
+  // Encerra a linha: cancela o registro no PBX (REGISTER com expires=0) e espera a resposta
+  // (até 2,5 s) antes de fechar a conexão. Devolve uma Promise.
   _stopLine(line) {
+    if (line.stopping) return line.stopping;
+    const wasRegistered = line.status === 'registered';
     line.stopped = true;
     clearTimeout(line.retry);
     clearTimeout(line.watchdog);
     for (const call of this.calls.values()) if (call.accountId === line.account.id) this._terminate(call);
     const ua = line.ua;
-    if (ua) {
-      (line.status === 'registered' ? line.registerer.unregister().catch(() => {}) : Promise.resolve())
-        .then(() => new Promise((r) => setTimeout(r, 300)))
-        .finally(() => ua.stop().catch(() => {}));
-    }
+    if (!ua) return (line.stopping = Promise.resolve());
+    const unregister = wasRegistered
+      ? new Promise((resolve) => {
+          const timer = setTimeout(resolve, 2500);
+          const done = () => {
+            clearTimeout(timer);
+            resolve();
+          };
+          line.registerer.unregister({ requestDelegate: { onAccept: done, onReject: done } }).catch(done);
+        })
+      : Promise.resolve();
+    line.stopping = unregister
+      .then(() => log(`LINHA ${line.account.name || line.account.user}: registro cancelado`))
+      .finally(() => ua.stop().catch(() => {}));
+    return line.stopping;
   }
 
+  // Cancela o registro de todas as linhas (usado ao sair do app).
   stopAll() {
-    for (const line of this.lines.values()) this._stopLine(line);
+    return Promise.all([...this.lines.values()].map((l) => this._stopLine(l)));
   }
 
   setDnd(on) {

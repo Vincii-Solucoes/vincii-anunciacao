@@ -1,5 +1,6 @@
 import '@fontsource-variable/inter';
 import './style.css';
+import { flush as flushLog } from './log.js';
 import { store, uid, DEMO, NATIVE, ACCOUNT_DEFAULTS } from './store.js';
 import { Phone } from './sip/phone.js';
 import { I } from './icons.js';
@@ -1005,7 +1006,13 @@ function bindEvents() {
     document.querySelectorAll('[data-since]').forEach((el) => (el.textContent = since(Number(el.dataset.since))));
   }, 1000);
 
-  window.addEventListener('beforeunload', () => phone.stopAll());
+  // Ao sair do app, o processo principal espera as linhas cancelarem o registro no PBX.
+  window.vincii?.app.onShutdown(async () => {
+    await phone.stopAll().catch(() => {});
+    flushLog();
+    window.vincii.app.shutdownDone();
+  });
+  if (!NATIVE) window.addEventListener('beforeunload', () => phone.stopAll());
 }
 
 async function start() {

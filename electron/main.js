@@ -68,10 +68,10 @@ function deliverDial(number) {
   showWindow();
 }
 
+// Só o app instalado se registra para links sip:/tel:/callto: — a versão de desenvolvimento
+// registraria o Electron "vazio" como o app desses links.
 if (app.isPackaged) {
   for (const p of ['sip', 'tel', 'callto']) app.setAsDefaultProtocolClient(p);
-} else if (process.defaultApp) {
-  for (const p of ['sip', 'tel', 'callto']) app.setAsDefaultProtocolClient(p, process.execPath, [path.resolve(process.argv[1] || '.')]);
 }
 
 app.on('second-instance', (_e, argv) => {
@@ -191,9 +191,10 @@ function updateTray() {
     },
     { type: 'separator' },
     {
-      label: 'Iniciar com o sistema',
+      label: app.isPackaged ? 'Iniciar com o sistema' : 'Iniciar com o sistema (só no app instalado)',
       type: 'checkbox',
-      checked: sys.startAtLogin,
+      enabled: app.isPackaged,
+      checked: app.isPackaged && sys.startAtLogin,
       click: (i) => setSystem({ startAtLogin: i.checked }),
     },
     {
@@ -237,8 +238,10 @@ function setSystem(input) {
   // Só aceita as chaves conhecidas, com valores booleanos.
   const patch = {};
   for (const k of SYSTEM_KEYS) if (typeof input?.[k] === 'boolean') patch[k] = input[k];
+  // Inicialização automática só no app instalado (em desenvolvimento o macOS abriria o Electron vazio).
+  if (!app.isPackaged) delete patch.startAtLogin;
   sys = { ...sys, ...patch };
-  if ('startAtLogin' in patch || ('startHidden' in patch && sys.startAtLogin)) {
+  if (app.isPackaged && ('startAtLogin' in patch || ('startHidden' in patch && sys.startAtLogin))) {
     try {
       applyLoginItem(sys.startAtLogin);
     } catch (err) {
@@ -382,6 +385,15 @@ app.whenReady().then(async () => {
   // Ícone no Dock durante o desenvolvimento (no app empacotado vem do .icns).
   if (process.platform === 'darwin' && !app.isPackaged) app.dock?.setIcon(ICON);
 
+  // Mantém o item de inicialização apontando para o app instalado atual (ex.: após atualizar).
+  if (app.isPackaged && sys.startAtLogin) {
+    try {
+      applyLoginItem(true);
+    } catch {
+      /* ignora */
+    }
+  }
+
   ipc();
   createTray();
   createWindow(launchedHidden() && sys.startHidden);
@@ -399,8 +411,20 @@ app.on('web-contents-created', (_e, contents) => {
 });
 
 app.on('activate', showWindow);
-app.on('before-quit', () => {
+// Antes de sair, a janela cancela o registro das linhas no PBX (máx. 3 s).
+let shutdownDone = false;
+app.on('before-quit', (e) => {
   quitting = true;
+  if (shutdownDone || !win || win.isDestroyed()) return;
+  e.preventDefault();
+  const finish = () => {
+    if (shutdownDone) return;
+    shutdownDone = true;
+    app.quit();
+  };
+  ipcMain.once('app:shutdown-done', finish);
+  setTimeout(finish, 3000);
+  win.webContents.send('app:shutdown');
 });
 app.on('window-all-closed', () => {
   // Continua na bandeja; só sai por "Sair".

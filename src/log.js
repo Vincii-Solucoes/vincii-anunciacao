@@ -10,7 +10,7 @@ export function log(tag, text) {
   if (!timer) timer = setTimeout(flush, 300);
 }
 
-function flush() {
+export function flush() {
   timer = null;
   if (buf) window.vincii.log.write(buf);
   buf = '';
