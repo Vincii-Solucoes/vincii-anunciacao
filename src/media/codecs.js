@@ -28,12 +28,13 @@ export function loadG729() {
 }
 export const g729Available = () => !!g729;
 
+// Padrão para linhas novas: PCMU, PCMA e G.729 (nessa ordem); G.722 e Opus ficam disponíveis, desmarcados.
 export const DEFAULT_CODECS = [
-  { id: 'PCMA', on: true },
   { id: 'PCMU', on: true },
-  { id: 'G722', on: true },
+  { id: 'PCMA', on: true },
+  { id: 'G729', on: true },
+  { id: 'G722', on: false },
   { id: 'opus', on: false },
-  { id: 'G729', on: false },
 ];
 
 // Garante a lista completa (codecs novos entram desativados no fim).
