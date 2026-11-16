@@ -1,6 +1,7 @@
 // Motor de mídia: um AudioContext compartilhado por todas as chamadas.
 import workletUrl from './engine-worklet.js?url';
 import { RtpStream } from './rtp.js';
+import { listDevices, resolveDevice } from './devices.js';
 
 
 export class MediaEngine {
@@ -34,7 +35,7 @@ export class MediaEngine {
   // A saída passa por um par WebRTC local para que o cancelamento de eco do Chromium
   // tenha a referência do que sai no alto-falante. Se falhar, toca direto.
   async _routeOutput() {
-    const speaker = this.settings.speakerId || '';
+    const speaker = resolveDevice(await listDevices(), 'audiooutput', this.settings.speakerId || '', 'voice');
     if (this.settings.echoCancellation !== false) {
       try {
         const dest = this.ctx.createMediaStreamDestination();
@@ -86,9 +87,7 @@ export class MediaEngine {
   // Saída: o dispositivo escolhido se estiver conectado; senão o padrão do sistema.
   async _applySink() {
     if (!this.ctx) return;
-    const devices = await navigator.mediaDevices.enumerateDevices().catch(() => []);
-    const want = this.settings.speakerId || '';
-    const id = want && devices.some((d) => d.kind === 'audiooutput' && d.deviceId === want) ? want : '';
+    const id = resolveDevice(await listDevices(), 'audiooutput', this.settings.speakerId || '', 'voice');
     // Reaplicar '' faz o Chromium reavaliar o padrão do sistema (ex.: fone recém-conectado).
     if (this.sinkEl?.setSinkId) {
       if (this.sinkEl.sinkId === id && id) return;
@@ -101,14 +100,13 @@ export class MediaEngine {
   async refreshDevices() {
     await this._applySink();
     if (!this.mic) return;
-    const devices = await navigator.mediaDevices.enumerateDevices().catch(() => []);
+    const devices = await listDevices();
     const track = this.mic.getAudioTracks()[0];
-    const using = track?.getSettings?.().deviceId;
-    const want = this.settings.micId || '';
-    const wantPresent = want && devices.some((d) => d.kind === 'audioinput' && d.deviceId === want);
-    const defaultNow = devices.find((d) => d.kind === 'audioinput' && d.deviceId === 'default');
+    const target = resolveDevice(devices, 'audioinput', this.settings.micId || '', 'voice');
+    // Para "padrão"/"comunicação", compara o aparelho físico (groupId) que o atalho aponta agora.
+    const group = devices.find((d) => d.kind === 'audioinput' && d.deviceId === (target || 'default'))?.groupId;
     const ended = !track || track.readyState === 'ended';
-    const shouldSwitch = ended || (wantPresent ? using !== want : this._micGroup !== defaultNow?.groupId);
+    const shouldSwitch = ended || target !== this._micTarget || group !== this._micGroup;
     if (shouldSwitch) await this.restartMic().catch((err) => console.warn('Falha ao trocar o microfone', err));
   }
 
@@ -119,12 +117,12 @@ export class MediaEngine {
   async _startMic() {
     if (this.mic) return;
     const s = this.settings;
-    const devices = await navigator.mediaDevices.enumerateDevices().catch(() => []);
-    const present = s.micId && devices.some((d) => d.kind === 'audioinput' && d.deviceId === s.micId);
+    const devices = await listDevices();
+    // Escolhido e conectado: ele. Senão: padrão de comunicação (Windows) ou padrão do sistema.
+    const target = resolveDevice(devices, 'audioinput', s.micId || '', 'voice');
     this.mic = await navigator.mediaDevices.getUserMedia({
       audio: {
-        // Escolhido e conectado: usa exatamente ele. Senão: padrão do sistema.
-        deviceId: present ? { exact: s.micId } : undefined,
+        deviceId: target ? { exact: target } : undefined,
         echoCancellation: s.echoCancellation !== false,
         noiseSuppression: s.noiseSuppression !== false,
         autoGainControl: s.autoGainControl !== false,
@@ -133,8 +131,9 @@ export class MediaEngine {
     });
     this.micSource = this.ctx.createMediaStreamSource(this.mic);
     this.micSource.connect(this.node);
-    // Lembra qual dispositivo físico era o padrão ao abrir, para detectar troca do padrão do sistema.
-    this._micGroup = devices.find((d) => d.kind === 'audioinput' && d.deviceId === 'default')?.groupId;
+    // Lembra qual aparelho físico estava em uso, para detectar troca do padrão do sistema.
+    this._micTarget = target;
+    this._micGroup = devices.find((d) => d.kind === 'audioinput' && d.deviceId === (target || 'default'))?.groupId;
   }
 
   _stopMic() {
@@ -171,7 +170,8 @@ export class MediaEngine {
       g.connect(dest);
       const el = new Audio();
       el.srcObject = dest.stream;
-      if (this.settings.speakerId && el.setSinkId) await el.setSinkId(this.settings.speakerId).catch(() => {});
+      const sink = resolveDevice(await listDevices(), 'audiooutput', this.settings.speakerId || '', 'voice');
+      if (el.setSinkId) await el.setSinkId(sink).catch(() => {});
       await el.play().catch(() => {});
       setTimeout(() => (el.srcObject = null), 900);
     }

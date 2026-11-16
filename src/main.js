@@ -7,6 +7,7 @@ import { I } from './icons.js';
 import { unlockAudio, setRinger, dtmfTone, setRingerDevice, testRinger } from './audio.js';
 import { seedDemo, randomCaller } from './demo.js';
 import { CODECS, normalizeCodecs, enabledCodecs, opusSupported, loadG729 } from './media/codecs.js';
+import { resolveDevice, autoLabel, cleanLabel } from './media/devices.js';
 
 const COLORS = ['#00C9B1', '#4DA3FF', '#F5B83D', '#E86A92', '#9B7BFF', '#6BD16B'];
 const KEYS = [
@@ -623,12 +624,10 @@ function accountModal(id) {
 
 // Opções de um seletor de dispositivo: "Padrão do sistema (nome atual)", os dispositivos reais e,
 // se o escolhido estiver desconectado, uma linha indicando isso.
-const cleanLabel = (l) => String(l || '').replace(/^(Default|Padrão|Communications|Comunicações)\s*-\s*/i, '').trim();
-function deviceOptions(devices, kind, current) {
+function deviceOptions(devices, kind, current, role = 'voice') {
   const list = devices.filter((d) => d.kind === kind);
-  const def = list.find((d) => d.deviceId === 'default');
   const real = list.filter((d) => d.deviceId && d.deviceId !== 'default' && d.deviceId !== 'communications');
-  let html = opt('', def?.label ? `Padrão do sistema (${cleanLabel(def.label)})` : 'Padrão do sistema', current || '');
+  let html = opt('', autoLabel(devices, kind, role), current || '');
   if (current && !real.some((d) => d.deviceId === current)) html += opt(current, 'Dispositivo escolhido (desconectado — usando o padrão)', current);
   html += real.map((d, i) => opt(d.deviceId, cleanLabel(d.label) || `Dispositivo ${i + 1}`, current || '')).join('');
   return html;
@@ -652,7 +651,7 @@ function startMicMeter(bar, getId, s) {
     stop();
     if (stopped || !bar) return;
     try {
-      const id = getId();
+      const id = resolveDevice(await navigator.mediaDevices.enumerateDevices().catch(() => []), 'audioinput', getId(), 'voice');
       stream = await navigator.mediaDevices.getUserMedia({
         audio: { deviceId: id ? { exact: id } : undefined, echoCancellation: s.echoCancellation !== false, noiseSuppression: s.noiseSuppression !== false, autoGainControl: s.autoGainControl !== false },
       });
@@ -760,11 +759,11 @@ async function settingsModal() {
         <div class="field">
           <span>Toque da chamada</span>
           <div class="dev-row">
-            <select name="ringerId" id="dev-ring" aria-label="Toque">${deviceOptions(devices, 'audiooutput', s.ringerId)}</select>
+            <select name="ringerId" id="dev-ring" aria-label="Toque">${deviceOptions(devices, 'audiooutput', s.ringerId, 'ring')}</select>
             <button type="button" class="btn btn-ghost sm" id="test-ring">Testar</button>
           </div>
         </div>
-        <p class="muted small">"Padrão do sistema" acompanha o dispositivo escolhido no sistema operacional (inclusive ao conectar um fone durante a chamada). Se um dispositivo escolhido for desconectado, o app usa o padrão até ele voltar.</p>
+        <p class="muted small">A opção "Padrão" acompanha o sistema operacional, inclusive ao conectar um fone durante a chamada. No Windows, a voz usa o <b>dispositivo de comunicação padrão</b> (em geral o headset) e o toque usa o padrão multimídia (em geral as caixas de som). Se um dispositivo escolhido for desconectado, o app usa o padrão até ele voltar.</p>
       </div>
       ${chk('echoCancellation', s.echoCancellation, 'Cancelamento de eco')}
       ${chk('noiseSuppression', s.noiseSuppression, 'Supressão de ruído')}
@@ -855,7 +854,7 @@ async function settingsModal() {
         const list = await navigator.mediaDevices.enumerateDevices().catch(() => []);
         selMic.innerHTML = deviceOptions(list, 'audioinput', selMic.value);
         selSpk.innerHTML = deviceOptions(list, 'audiooutput', selSpk.value);
-        selRing.innerHTML = deviceOptions(list, 'audiooutput', selRing.value);
+        selRing.innerHTML = deviceOptions(list, 'audiooutput', selRing.value, 'ring');
       };
       navigator.mediaDevices.addEventListener?.('devicechange', refreshLists);
       const meter = startMicMeter(modal.querySelector('#mic-meter'), () => selMic.value, s);

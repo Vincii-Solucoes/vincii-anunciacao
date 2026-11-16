@@ -1,4 +1,5 @@
 // Toques gerados via WebAudio (sem arquivos de áudio).
+import { listDevices, resolveDevice } from './media/devices.js';
 let ctx = null;
 
 function ensureCtx() {
@@ -17,9 +18,8 @@ export async function setRingerDevice(id) {
   ringerSink = id || '';
   const c = ensureCtx();
   if (!c?.setSinkId) return;
-  const devices = await navigator.mediaDevices.enumerateDevices().catch(() => []);
-  const ok = ringerSink && devices.some((d) => d.kind === 'audiooutput' && d.deviceId === ringerSink);
-  await c.setSinkId(ok ? ringerSink : '').catch(() => {});
+  const target = resolveDevice(await listDevices(), 'audiooutput', ringerSink, 'ring');
+  await c.setSinkId(target).catch(() => {});
 }
 
 // Toca o toque uma vez (botão "Testar").
