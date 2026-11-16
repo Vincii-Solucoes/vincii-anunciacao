@@ -1,7 +1,8 @@
 name: Release
 
 # Ao enviar uma tag "vX.Y.Z", compila os instaladores em macOS, Windows e Linux
-# e publica todos num único GitHub Release.
+# e publica todos num único GitHub Release. Os latest*.yml (e .blockmap) vão junto:
+# é o que a atualização automática do app (electron-updater) consulta.
 
 on:
   push:
@@ -47,6 +48,8 @@ jobs:
             release/*.exe
             release/*.AppImage
             release/*.deb
+            release/*.blockmap
+            release/latest*.yml
 
   release:
     needs: build
@@ -63,7 +66,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           shopt -s nullglob
-          files=(artifacts/*.dmg artifacts/*.zip artifacts/*.exe artifacts/*.AppImage artifacts/*.deb)
+          files=(artifacts/*.dmg artifacts/*.zip artifacts/*.exe artifacts/*.AppImage artifacts/*.deb artifacts/*.blockmap artifacts/latest*.yml)
           printf ' - %s\n' "${files[@]}"
           if [ ${#files[@]} -eq 0 ]; then echo "Nenhum instalador"; exit 1; fi
           gh release delete "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --yes 2>/dev/null || true

@@ -80,17 +80,51 @@ export class MediaEngine {
 
   async setSpeaker(id) {
     this.settings.speakerId = id;
+    await this._applySink();
+  }
+
+  // Saída: o dispositivo escolhido se estiver conectado; senão o padrão do sistema.
+  async _applySink() {
     if (!this.ctx) return;
-    if (this.sinkEl?.setSinkId) await this.sinkEl.setSinkId(id || '').catch(() => {});
-    else if (this.ctx.setSinkId) await this.ctx.setSinkId(id || '').catch(() => {});
+    const devices = await navigator.mediaDevices.enumerateDevices().catch(() => []);
+    const want = this.settings.speakerId || '';
+    const id = want && devices.some((d) => d.kind === 'audiooutput' && d.deviceId === want) ? want : '';
+    // Reaplicar '' faz o Chromium reavaliar o padrão do sistema (ex.: fone recém-conectado).
+    if (this.sinkEl?.setSinkId) {
+      if (this.sinkEl.sinkId === id && id) return;
+      await this.sinkEl.setSinkId(id).catch(() => {});
+    } else if (this.ctx.setSinkId) await this.ctx.setSinkId(id).catch(() => {});
+  }
+
+  // Chamado quando um dispositivo de áudio é conectado/desconectado ou o padrão do sistema muda:
+  // o microfone e a saída acompanham o padrão (ou voltam ao escolhido quando ele reaparece).
+  async refreshDevices() {
+    await this._applySink();
+    if (!this.mic) return;
+    const devices = await navigator.mediaDevices.enumerateDevices().catch(() => []);
+    const track = this.mic.getAudioTracks()[0];
+    const using = track?.getSettings?.().deviceId;
+    const want = this.settings.micId || '';
+    const wantPresent = want && devices.some((d) => d.kind === 'audioinput' && d.deviceId === want);
+    const defaultNow = devices.find((d) => d.kind === 'audioinput' && d.deviceId === 'default');
+    const ended = !track || track.readyState === 'ended';
+    const shouldSwitch = ended || (wantPresent ? using !== want : this._micGroup !== defaultNow?.groupId);
+    if (shouldSwitch) await this.restartMic().catch((err) => console.warn('Falha ao trocar o microfone', err));
+  }
+
+  get micLabel() {
+    return this.mic?.getAudioTracks()[0]?.label || '';
   }
 
   async _startMic() {
     if (this.mic) return;
     const s = this.settings;
+    const devices = await navigator.mediaDevices.enumerateDevices().catch(() => []);
+    const present = s.micId && devices.some((d) => d.kind === 'audioinput' && d.deviceId === s.micId);
     this.mic = await navigator.mediaDevices.getUserMedia({
       audio: {
-        deviceId: s.micId ? { ideal: s.micId } : undefined,
+        // Escolhido e conectado: usa exatamente ele. Senão: padrão do sistema.
+        deviceId: present ? { exact: s.micId } : undefined,
         echoCancellation: s.echoCancellation !== false,
         noiseSuppression: s.noiseSuppression !== false,
         autoGainControl: s.autoGainControl !== false,
@@ -99,6 +133,8 @@ export class MediaEngine {
     });
     this.micSource = this.ctx.createMediaStreamSource(this.mic);
     this.micSource.connect(this.node);
+    // Lembra qual dispositivo físico era o padrão ao abrir, para detectar troca do padrão do sistema.
+    this._micGroup = devices.find((d) => d.kind === 'audioinput' && d.deviceId === 'default')?.groupId;
   }
 
   _stopMic() {
@@ -112,6 +148,35 @@ export class MediaEngine {
     if (!this.mic) return;
     this._stopMic();
     await this._startMic();
+  }
+
+  // Toca um tom curto na saída escolhida (botão "Testar" das Configurações).
+  async testSpeaker() {
+    await this.ensure();
+    if (this.ctx.state !== 'running') await this.ctx.resume().catch(() => {});
+    await this._applySink();
+    const target = this.sinkEl ? null : this.ctx.destination;
+    const o = this.ctx.createOscillator();
+    const g = this.ctx.createGain();
+    o.frequency.value = 660;
+    const t = this.ctx.currentTime;
+    g.gain.setValueAtTime(0, t);
+    g.gain.linearRampToValueAtTime(0.2, t + 0.03);
+    g.gain.linearRampToValueAtTime(0, t + 0.6);
+    o.connect(g);
+    if (target) g.connect(target);
+    else {
+      // Mesma rota das chamadas (par WebRTC com o elemento de áudio).
+      const dest = this.ctx.createMediaStreamDestination();
+      g.connect(dest);
+      const el = new Audio();
+      el.srcObject = dest.stream;
+      if (this.settings.speakerId && el.setSinkId) await el.setSinkId(this.settings.speakerId).catch(() => {});
+      await el.play().catch(() => {});
+      setTimeout(() => (el.srcObject = null), 900);
+    }
+    o.start(t);
+    o.stop(t + 0.65);
   }
 
   _onWorklet(m) {

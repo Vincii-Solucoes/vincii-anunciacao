@@ -4,7 +4,7 @@ import { flush as flushLog } from './log.js';
 import { store, uid, DEMO, NATIVE, ACCOUNT_DEFAULTS } from './store.js';
 import { Phone } from './sip/phone.js';
 import { I } from './icons.js';
-import { unlockAudio, setRinger, dtmfTone } from './audio.js';
+import { unlockAudio, setRinger, dtmfTone, setRingerDevice, testRinger } from './audio.js';
 import { seedDemo, randomCaller } from './demo.js';
 import { CODECS, normalizeCodecs, enabledCodecs, opusSupported, loadG729 } from './media/codecs.js';
 
@@ -316,7 +316,11 @@ function renderDialerLines() {
   const sel = $('#dial-line');
   const lines = [...phone.lines.values()];
   const usable = lines.filter((l) => l.status === 'registered');
-  if (!usable.some((l) => l.account.id === ui.selectedLine)) ui.selectedLine = usable[0]?.account.id || null;
+  if (!usable.some((l) => l.account.id === ui.selectedLine)) {
+    // Prefere a última linha usada (lembrada entre aberturas do app); senão a primeira registrada.
+    const last = usable.find((l) => l.account.id === store.settings.lastLine);
+    ui.selectedLine = (last || usable[0])?.account.id || null;
+  }
   sel.innerHTML = lines.length
     ? lines
         .map(
@@ -430,6 +434,8 @@ function openModal(html, onMount) {
   const root = $('#modal-root');
   root.innerHTML = `<div class="modal-backdrop"><div class="modal" role="dialog" aria-modal="true">${html}</div></div>`;
   const close = () => {
+    root._onClose?.();
+    root._onClose = null;
     root.innerHTML = '';
     ui.themePreview = null; // desfaz a prévia de tema não salva
     applyTheme();
@@ -439,7 +445,14 @@ function openModal(html, onMount) {
   });
   root.querySelectorAll('[data-close]').forEach((b) => b.addEventListener('click', close));
   onMount?.(root.querySelector('.modal'), close);
-  root.querySelector('input, select')?.focus();
+  // Foco no primeiro campo de texto (cadastro de linha); nas Configurações, na própria janela.
+  const first = root.querySelector('input[type="text"], input:not([type]), input[type="password"]');
+  if (first) first.focus();
+  else {
+    const m = root.querySelector('.modal');
+    m.tabIndex = -1;
+    m.focus({ preventScroll: true });
+  }
 }
 
 const opt = (v, label, cur) => `<option value="${esc(v)}" ${String(v) === String(cur) ? 'selected' : ''}>${esc(label)}</option>`;
@@ -608,6 +621,94 @@ function accountModal(id) {
 }
 
 
+// Opções de um seletor de dispositivo: "Padrão do sistema (nome atual)", os dispositivos reais e,
+// se o escolhido estiver desconectado, uma linha indicando isso.
+const cleanLabel = (l) => String(l || '').replace(/^(Default|Padrão|Communications|Comunicações)\s*-\s*/i, '').trim();
+function deviceOptions(devices, kind, current) {
+  const list = devices.filter((d) => d.kind === kind);
+  const def = list.find((d) => d.deviceId === 'default');
+  const real = list.filter((d) => d.deviceId && d.deviceId !== 'default' && d.deviceId !== 'communications');
+  let html = opt('', def?.label ? `Padrão do sistema (${cleanLabel(def.label)})` : 'Padrão do sistema', current || '');
+  if (current && !real.some((d) => d.deviceId === current)) html += opt(current, 'Dispositivo escolhido (desconectado — usando o padrão)', current);
+  html += real.map((d, i) => opt(d.deviceId, cleanLabel(d.label) || `Dispositivo ${i + 1}`, current || '')).join('');
+  return html;
+}
+
+// Medidor de nível do microfone selecionado (só enquanto as Configurações estão abertas).
+function startMicMeter(bar, getId, s) {
+  let stream = null;
+  let ctx = null;
+  let raf = 0;
+  let stopped = false;
+  const stop = () => {
+    cancelAnimationFrame(raf);
+    stream?.getTracks().forEach((t) => t.stop());
+    ctx?.close().catch(() => {});
+    stream = null;
+    ctx = null;
+    if (bar) bar.style.width = '0%';
+  };
+  const start = async () => {
+    stop();
+    if (stopped || !bar) return;
+    try {
+      const id = getId();
+      stream = await navigator.mediaDevices.getUserMedia({
+        audio: { deviceId: id ? { exact: id } : undefined, echoCancellation: s.echoCancellation !== false, noiseSuppression: s.noiseSuppression !== false, autoGainControl: s.autoGainControl !== false },
+      });
+      if (stopped) return stop();
+      ctx = new AudioContext();
+      const an = ctx.createAnalyser();
+      an.fftSize = 512;
+      ctx.createMediaStreamSource(stream).connect(an);
+      const buf = new Float32Array(an.fftSize);
+      const loop = () => {
+        an.getFloatTimeDomainData(buf);
+        let peak = 0;
+        for (const v of buf) peak = Math.max(peak, Math.abs(v));
+        bar.style.width = `${Math.min(100, Math.round(Math.sqrt(peak) * 120))}%`;
+        raf = requestAnimationFrame(loop);
+      };
+      loop();
+    } catch {
+      bar.parentElement.title = 'Microfone indisponível';
+    }
+  };
+  start();
+  return {
+    restart: start,
+    stop() {
+      stopped = true;
+      stop();
+    },
+  };
+}
+
+// Bloco "Atualizações" das Configurações (mesmos estados do Palette).
+function renderUpdateBox(box, u, versionEl) {
+  if (versionEl && u?.current) versionEl.textContent = `Vincii Anunciação ${u.current}`;
+  const at = u?.checkedAt ? ` (verificado às ${new Date(u.checkedAt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })})` : '';
+  const labels = {
+    unsupported: 'Atualização automática disponível só no app instalado.',
+    idle: 'Aguardando a primeira verificação…',
+    checking: 'Verificando…',
+    'up-to-date': `Você está na versão mais recente${at}.`,
+    available: `Versão ${u?.version} disponível${at}.`,
+    downloading: `Baixando a versão ${u?.version}… ${u?.percent || 0}%`,
+    downloaded: `Versão ${u?.version} baixada e pronta para instalar.`,
+    error: `Falha na atualização: ${u?.message || ''}${at}`,
+  };
+  const st = u?.status || 'unsupported';
+  const btn = (act, text, cls = 'btn-ghost') => `<button type="button" class="btn ${cls} sm" data-upd="${act}">${text}</button>`;
+  const actions = [];
+  if (st === 'downloaded') actions.push(btn('install', 'Reiniciar e atualizar', 'btn-primary'));
+  if (st === 'available') actions.push(btn('open', `Baixar ${esc(u.version)}`, 'btn-primary'));
+  if (st === 'error' || st === 'unsupported') actions.push(btn('open', 'Baixar manualmente'));
+  if (['idle', 'up-to-date', 'available', 'error', 'checking', 'downloading'].includes(st)) actions.push(btn('check', 'Verificar agora'));
+  box.className = `update-box ${st === 'error' ? 'bad' : st === 'available' || st === 'downloaded' ? 'ok' : ''}`;
+  box.innerHTML = `<span>${esc(labels[st] || '')}</span>${actions.length ? `<div class="row">${actions.join('')}</div>` : ''}`;
+}
+
 async function settingsModal() {
   const s = store.settings;
   let devices = [];
@@ -618,12 +719,6 @@ async function settingsModal() {
   }
   const sys = NATIVE ? await window.vincii.app.getSystem() : null;
   const needsPermission = devices.some((d) => d.kind === 'audioinput' && !d.label);
-  const devOpts = (kind, current) =>
-    opt('', 'Padrão do sistema', current) +
-    devices
-      .filter((d) => d.kind === kind && d.deviceId && d.deviceId !== 'default')
-      .map((d, i) => opt(d.deviceId, d.label || `Dispositivo ${i + 1}`, current))
-      .join('');
   const notif = 'Notification' in window ? Notification.permission : 'unsupported';
   const chk = (name, on, label) => `<label class="check"><input type="checkbox" name="${name}" ${on ? 'checked' : ''} /> ${label}</label>`;
 
@@ -649,9 +744,27 @@ async function settingsModal() {
 
       <h4>Áudio</h4>
       ${needsPermission ? `<div class="notice">Permita o acesso ao microfone para ver os nomes dos dispositivos. <button type="button" class="link-btn" id="ask-mic">Permitir</button></div>` : ''}
-      <div class="grid2">
-        <label class="field"><span>Microfone</span><select name="micId">${devOpts('audioinput', s.micId)}</select></label>
-        <label class="field"><span>Alto-falante / fone</span><select name="speakerId">${devOpts('audiooutput', s.speakerId)}</select></label>
+      <div class="devices">
+        <div class="field">
+          <span>Microfone</span>
+          <select name="micId" id="dev-mic" aria-label="Microfone">${deviceOptions(devices, 'audioinput', s.micId)}</select>
+          <div class="meter" title="Nível do microfone"><i id="mic-meter"></i></div>
+        </div>
+        <div class="field">
+          <span>Alto-falante / fone (voz da chamada)</span>
+          <div class="dev-row">
+            <select name="speakerId" id="dev-spk" aria-label="Alto-falante">${deviceOptions(devices, 'audiooutput', s.speakerId)}</select>
+            <button type="button" class="btn btn-ghost sm" id="test-spk">Testar</button>
+          </div>
+        </div>
+        <div class="field">
+          <span>Toque da chamada</span>
+          <div class="dev-row">
+            <select name="ringerId" id="dev-ring" aria-label="Toque">${deviceOptions(devices, 'audiooutput', s.ringerId)}</select>
+            <button type="button" class="btn btn-ghost sm" id="test-ring">Testar</button>
+          </div>
+        </div>
+        <p class="muted small">"Padrão do sistema" acompanha o dispositivo escolhido no sistema operacional (inclusive ao conectar um fone durante a chamada). Se um dispositivo escolhido for desconectado, o app usa o padrão até ele voltar.</p>
       </div>
       ${chk('echoCancellation', s.echoCancellation, 'Cancelamento de eco')}
       ${chk('noiseSuppression', s.noiseSuppression, 'Supressão de ruído')}
@@ -698,8 +811,10 @@ async function settingsModal() {
               : `Receba um alerta quando tocar com a janela em segundo plano. <button type="button" class="link-btn" id="ask-notif">Ativar</button>`
       }</div>
 
+      ${NATIVE ? `<h4>Atualizações</h4><div class="update-box" id="update-box"></div>` : ''}
+
       <div class="modal-foot">
-        <span class="muted small">${DEMO ? 'Modo demonstração' : 'Vincii Anunciação 2.5'}</span>
+        <span class="muted small" id="app-version">${DEMO ? 'Modo demonstração' : 'Vincii Anunciação'}</span>
         <div class="row">
           <button type="button" class="btn btn-ghost" data-close>Cancelar</button>
           <button type="submit" class="btn btn-primary">Salvar</button>
@@ -715,6 +830,55 @@ async function settingsModal() {
         })
       );
       modal.querySelector('#open-logs')?.addEventListener('click', () => window.vincii.log.open());
+
+      // Atualizações: estado ao vivo enquanto a janela está aberta.
+      let offUpdate = null;
+      const box = modal.querySelector('#update-box');
+      if (box) {
+        const paint = (u) => renderUpdateBox(box, u, modal.querySelector('#app-version'));
+        window.vincii.update.get().then(paint);
+        offUpdate = window.vincii.update.onState(paint);
+        box.addEventListener('click', (e) => {
+          const b = e.target.closest('[data-upd]');
+          if (!b) return;
+          if (b.dataset.upd === 'check') window.vincii.update.check().then(paint);
+          if (b.dataset.upd === 'install') window.vincii.update.install();
+          if (b.dataset.upd === 'open') window.vincii.update.openReleases();
+        });
+      }
+
+      // Dispositivos: listas atualizadas ao conectar/desconectar, medidor do microfone e testes.
+      const selMic = modal.querySelector('#dev-mic');
+      const selSpk = modal.querySelector('#dev-spk');
+      const selRing = modal.querySelector('#dev-ring');
+      const refreshLists = async () => {
+        const list = await navigator.mediaDevices.enumerateDevices().catch(() => []);
+        selMic.innerHTML = deviceOptions(list, 'audioinput', selMic.value);
+        selSpk.innerHTML = deviceOptions(list, 'audiooutput', selSpk.value);
+        selRing.innerHTML = deviceOptions(list, 'audiooutput', selRing.value);
+      };
+      navigator.mediaDevices.addEventListener?.('devicechange', refreshLists);
+      const meter = startMicMeter(modal.querySelector('#mic-meter'), () => selMic.value, s);
+      selMic.addEventListener('change', () => meter.restart());
+      modal.querySelector('#test-spk').addEventListener('click', async () => {
+        if (phone.engine) {
+          const saved = s.speakerId;
+          s.speakerId = selSpk.value;
+          await phone.engine.testSpeaker().catch(() => {});
+          s.speakerId = saved;
+          phone.engine.setSpeaker(saved);
+        } else testRinger();
+      });
+      modal.querySelector('#test-ring').addEventListener('click', async () => {
+        await setRingerDevice(selRing.value);
+        testRinger();
+        setTimeout(() => setRingerDevice(s.ringerId), 1800);
+      });
+      $('#modal-root')._onClose = () => {
+        offUpdate?.();
+        navigator.mediaDevices.removeEventListener?.('devicechange', refreshLists);
+        meter.stop();
+      };
       modal.querySelector('#ask-mic')?.addEventListener('click', async () => {
         try {
           const st = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -739,6 +903,7 @@ async function settingsModal() {
         Object.assign(s, {
           micId: f.micId || '',
           speakerId: f.speakerId || '',
+          ringerId: f.ringerId || '',
           echoCancellation: !!f.echoCancellation,
           noiseSuppression: !!f.noiseSuppression,
           autoGainControl: !!f.autoGainControl,
@@ -752,6 +917,7 @@ async function settingsModal() {
         ui.themePreview = null;
         store.saveSettings();
         applyTheme();
+        setRingerDevice(s.ringerId);
         if (phone.engine) {
           if (speakerChanged) phone.engine.setSpeaker(s.speakerId);
           if (micChanged) phone.engine.restartMic().catch(() => toast('Não foi possível reabrir o microfone', 'error'));
@@ -906,6 +1072,8 @@ function bindEvents() {
     }
     if (e.target.id === 'dial-line') {
       ui.selectedLine = e.target.value;
+      store.settings.lastLine = e.target.value;
+      store.saveSettings();
       renderDialerLines();
     }
   });
@@ -1027,6 +1195,12 @@ async function start() {
   shell();
   applyTheme();
   bindEvents();
+  setRingerDevice(store.settings.ringerId);
+  // Fone conectado/desconectado ou padrão do sistema trocado: áudio da chamada e toque acompanham.
+  navigator.mediaDevices?.addEventListener?.('devicechange', () => {
+    phone.engine?.refreshDevices();
+    setRingerDevice(store.settings.ringerId);
+  });
   phone.syncAccounts();
   if (!store.accounts.length) accountModal();
 }

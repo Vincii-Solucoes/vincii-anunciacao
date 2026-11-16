@@ -11,6 +11,23 @@ function ensureCtx() {
   return ctx;
 }
 
+// Dispositivo do toque ('' = padrão do sistema). Se o escolhido não estiver conectado, usa o padrão.
+let ringerSink = '';
+export async function setRingerDevice(id) {
+  ringerSink = id || '';
+  const c = ensureCtx();
+  if (!c?.setSinkId) return;
+  const devices = await navigator.mediaDevices.enumerateDevices().catch(() => []);
+  const ok = ringerSink && devices.some((d) => d.kind === 'audiooutput' && d.deviceId === ringerSink);
+  await c.setSinkId(ok ? ringerSink : '').catch(() => {});
+}
+
+// Toca o toque uma vez (botão "Testar").
+export function testRinger() {
+  if (!ensureCtx()) return;
+  PATTERNS.ring.play(ctx.currentTime + 0.02);
+}
+
 // Navegadores só liberam áudio após um gesto do usuário.
 export function unlockAudio() {
   ensureCtx();

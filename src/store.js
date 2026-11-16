@@ -9,6 +9,8 @@ const NS = DEMO ? 'anunciacao-demo' : 'anunciacao';
 const DEFAULT_SETTINGS = {
   micId: '',
   speakerId: '',
+  ringerId: '', // dispositivo do toque ('' = padrão do sistema)
+  lastLine: '', // última linha usada no discador
   autoHold: true,
   echoCancellation: true,
   noiseSuppression: true,

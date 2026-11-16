@@ -28,6 +28,13 @@ contextBridge.exposeInMainWorld('vincii', {
     encrypt: (text) => ipcRenderer.invoke('secret:encrypt', text),
     decrypt: (data) => ipcRenderer.invoke('secret:decrypt', data),
   },
+  update: {
+    get: () => ipcRenderer.invoke('update:get'),
+    check: () => ipcRenderer.invoke('update:check'),
+    install: () => ipcRenderer.send('update:install'),
+    openReleases: () => ipcRenderer.send('update:open'),
+    onState: on('update:state'),
+  },
   app: {
     getSystem: () => ipcRenderer.invoke('app:getSystem'),
     setSystem: (patch) => ipcRenderer.invoke('app:setSystem', patch),

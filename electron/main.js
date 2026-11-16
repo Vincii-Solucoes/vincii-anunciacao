@@ -3,6 +3,7 @@ import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import fs from 'node:fs';
 import * as sipnet from './net.js';
+import { setupUpdater, checkForUpdates, checkOnFocus, installUpdate, getUpdateState, openReleases } from './updater.js';
 import { loadSystem, saveSystem, applyLoginItem, isLoginItemEnabled, launchedHidden } from './system.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -132,7 +133,10 @@ function createWindow(hidden) {
       saveSystem(sys);
     }
   });
-  win.on('focus', () => win.flashFrame(false));
+  win.on('focus', () => {
+    win.flashFrame(false);
+    checkOnFocus();
+  });
   win.webContents.setWindowOpenHandler(({ url }) => {
     if (/^https?:/.test(url)) shell.openExternal(url);
     return { action: 'deny' };
@@ -204,6 +208,7 @@ function updateTray() {
       click: (i) => setSystem({ startHidden: i.checked }),
     },
     { type: 'separator' },
+    { label: `Versão ${app.getVersion()} — verificar atualizações`, click: () => checkForUpdates(true) },
     {
       label: 'Sair',
       click: () => {
@@ -352,6 +357,10 @@ function ipc() {
     updateTray();
   });
   ipcMain.on('app:show', showWindow);
+  ipcMain.handle('update:get', () => getUpdateState());
+  ipcMain.handle('update:check', () => checkForUpdates(true));
+  ipcMain.on('update:install', () => installUpdate());
+  ipcMain.on('update:open', () => openReleases());
   ipcMain.on('app:theme', (_e, source) => {
     nativeTheme.themeSource = ['light', 'dark'].includes(source) ? source : 'system';
     applyWindowTheme();
@@ -397,6 +406,11 @@ app.whenReady().then(async () => {
   ipc();
   createTray();
   createWindow(launchedHidden() && sys.startHidden);
+  setupUpdater({
+    getWin: () => win,
+    send: (channel, payload) => win && !win.isDestroyed() && win.webContents.send(channel, payload),
+    setQuitting: (v) => (quitting = v),
+  });
   const n = extractDial(process.argv);
   if (n) deliverDial(n);
 });

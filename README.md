@@ -41,6 +41,12 @@ fechar mantém rodando na bandeja; iniciar com o sistema e iniciar minimizado; a
 
 **Áudio**: codecs por linha, com ordem de preferência — Opus, G.722 (HD), G.711 PCMA e PCMU e G.729; motor interno em 16 kHz; RTP simétrico, cancelamento de eco, supressão de ruído e controle de ganho.
 
+## Atualizações
+
+Igual ao Palette: o app verifica o GitHub Releases ao abrir, a cada hora e ao voltar ao foco. No Windows e no Linux
+baixa sozinho e pergunta se reinicia; no macOS (sem assinatura Apple) avisa e abre a página de download. Estado e
+"Verificar agora" em Configurações › Atualizações; registro em `<dados>/logs/updater.log`.
+
 ## Segurança
 
 - SIP via UDP só é aceito vindo do servidor/proxy da linha (bloqueia "chamadas fantasma" de scanners).
