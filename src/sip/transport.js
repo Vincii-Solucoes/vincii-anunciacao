@@ -84,7 +84,7 @@ export function makeTransportClass(net) {
               }
               return;
             }
-            this._receive(data);
+            this._receive(data, rinfo);
           })
         );
         this.unsub.push(
@@ -127,10 +127,27 @@ export function makeTransportClass(net) {
       await this.disconnect();
     }
 
-    _raw(text) {
+    _raw(text, dest = this.server) {
       if (this.sockId == null) return;
-      if (this.protocol === 'UDP') net.udpSend(this.sockId, new TextEncoder().encode(text), this.server.port, this.server.address);
+      if (this.protocol === 'UDP') net.udpSend(this.sockId, new TextEncoder().encode(text), dest.port, dest.address);
       else net.streamSend(this.sockId, text);
+    }
+
+    // Respostas UDP voltam para a origem da requisição (RFC 3261 §18.2.2 / RFC 3581), anotada no
+    // Via como received/rport ao receber. Sem isso, se o PBX envia a chamada por outra porta/perfil
+    // (ex.: FreeSWITCH na 5080), o 180/200 iam para a porta do registro: o PBX não os recebia, não
+    // podia mandar CANCEL quando o cliente desistia e a chamada caía ao atender.
+    _responseDest(msg) {
+      if (this.protocol !== 'UDP') return this.server;
+      const via = topVia(msg);
+      const received = via.match(/;\s*received=([^;\s,]+)/i)?.[1];
+      const rport = Number(via.match(/;\s*rport=(\d+)/i)?.[1]);
+      const sentBy = via.match(/^SIP\/2\.0\/\w+\s+([^;\s,]+)/i)?.[1] || '';
+      const [host, port] = sentBy.split(':');
+      const address = received || host;
+      // Só para o próprio servidor (as requisições de outras origens já são descartadas).
+      if (address !== this.server.address) return this.server;
+      return { address, port: rport || Number(port) || 5060 };
     }
 
     send(message) {
@@ -141,8 +158,9 @@ export function makeTransportClass(net) {
       let out = message.replace(new RegExp(`^(Via:\\s*SIP/2\\.0/\\w+\\s+)${escapeRe(vh)}`, 'im'), `$1${via}`);
       out = out.split(vh).join(this.contactAddr);
       out = fixContentLength(out);
-      log(`${this.opts.account.name || this.opts.account.user} ENVIADO para ${this.server.address}:${this.server.port} (${this.protocol})`, out);
-      this._raw(out);
+      const dest = out.startsWith('SIP/2.0 ') ? this._responseDest(out) : this.server;
+      log(`${this.opts.account.name || this.opts.account.user} ENVIADO para ${dest.address}:${dest.port} (${this.protocol})`, out);
+      this._raw(out, dest);
       if (this.protocol === 'UDP' && /^[A-Z]+ /.test(out) && !out.startsWith('ACK ')) this._retransmit(out);
       return Promise.resolve();
     }
@@ -166,10 +184,18 @@ export function makeTransportClass(net) {
       this.pending.set(branch, entry);
     }
 
-    _receive(data) {
+    _receive(data, rinfo) {
       let msg = typeof data === 'string' ? data : new TextDecoder().decode(data);
       if (!msg.trim()) return; // pong do keep-alive
-      log(`${this.opts.account.name || this.opts.account.user} RECEBIDO (${this.protocol})`, msg);
+      log(`${this.opts.account.name || this.opts.account.user} RECEBIDO${rinfo ? ` de ${rinfo.address}:${rinfo.port}` : ''} (${this.protocol})`, msg);
+      // Requisição recebida por UDP: anota a origem real no Via de topo (received/rport), que o
+      // SIP.js copia para as respostas e _responseDest usa como destino.
+      if (this.protocol === 'UDP' && rinfo && /^[A-Z]+ /.test(msg)) {
+        msg = msg.replace(/^((?:Via|v)\s*:\s*SIP\/2\.0\/UDP\s+[^\r\n]*)$/im, (line) => {
+          const cleaned = line.replace(/;\s*rport(=\d*)?(?=;|,|$)/i, '').replace(/;\s*received=[^;\s,]+/i, '');
+          return `${cleaned};received=${rinfo.address};rport=${rinfo.port}`;
+        });
+      }
       if (msg.startsWith('SIP/2.0 ')) {
         const via = topVia(msg);
         const branch = branchOf(via);
