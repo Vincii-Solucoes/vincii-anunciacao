@@ -2,6 +2,9 @@
 import workletUrl from './engine-worklet.js?url';
 import { RtpStream } from './rtp.js';
 import { listDevices, resolveDevice } from './devices.js';
+import { log } from '../log.js';
+
+const devName = (devices, kind, id) => devices.find((d) => d.kind === kind && d.deviceId === (id || 'default'))?.label || id || 'padrão';
 
 
 export class MediaEngine {
@@ -35,7 +38,9 @@ export class MediaEngine {
   // A saída passa por um par WebRTC local para que o cancelamento de eco do Chromium
   // tenha a referência do que sai no alto-falante. Se falhar, toca direto.
   async _routeOutput() {
-    const speaker = resolveDevice(await listDevices(), 'audiooutput', this.settings.speakerId || '', 'voice');
+    const devices = await listDevices();
+    const speaker = resolveDevice(devices, 'audiooutput', this.settings.speakerId || '', 'voice');
+    log(`ÁUDIO saída da chamada: "${devName(devices, 'audiooutput', speaker)}" (id ${speaker || 'padrão'}; escolhido ${this.settings.speakerId || 'automático'}) — contexto ${this.ctx.sampleRate} Hz, estado ${this.ctx.state}`);
     if (this.settings.echoCancellation !== false) {
       try {
         const dest = this.ctx.createMediaStreamDestination();
@@ -57,18 +62,21 @@ export class MediaEngine {
         const stream = await Promise.race([got, new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 4000))]);
         const el = new Audio();
         el.srcObject = stream;
-        if (speaker && el.setSinkId) await el.setSinkId(speaker).catch(() => {});
+        if (speaker && el.setSinkId) await el.setSinkId(speaker).catch((e) => log(`ÁUDIO erro ao escolher a saída (rota com cancelamento de eco): ${e.message}`));
         await el.play();
         this.sinkEl = el;
         this._loop = [a, b];
+        log(`ÁUDIO rota de saída: com cancelamento de eco (sinkId atual "${el.sinkId || 'padrão'}")`);
         return;
       } catch (err) {
         console.warn('Saída com AEC indisponível, usando saída direta', err);
+        log(`ÁUDIO rota com cancelamento de eco falhou (${err?.message || err}); usando saída direta`);
         this.node.disconnect();
       }
     }
     this.node.connect(this.ctx.destination);
-    if (speaker && this.ctx.setSinkId) await this.ctx.setSinkId(speaker).catch(() => {});
+    if (speaker && this.ctx.setSinkId) await this.ctx.setSinkId(speaker).catch((e) => log(`ÁUDIO erro ao escolher a saída (rota direta): ${e.message}`));
+    log(`ÁUDIO rota de saída: direta (sinkId atual "${this.ctx.sinkId || 'padrão'}")`);
   }
 
   ensure() {
@@ -89,10 +97,15 @@ export class MediaEngine {
     if (!this.ctx) return;
     const id = resolveDevice(await listDevices(), 'audiooutput', this.settings.speakerId || '', 'voice');
     // Reaplicar '' faz o Chromium reavaliar o padrão do sistema (ex.: fone recém-conectado).
-    if (this.sinkEl?.setSinkId) {
-      if (this.sinkEl.sinkId === id && id) return;
-      await this.sinkEl.setSinkId(id).catch(() => {});
-    } else if (this.ctx.setSinkId) await this.ctx.setSinkId(id).catch(() => {});
+    const cur = this.sinkEl ? this.sinkEl.sinkId : this.ctx.sinkId;
+    if (cur === id && id) return;
+    try {
+      if (this.sinkEl?.setSinkId) await this.sinkEl.setSinkId(id);
+      else if (this.ctx.setSinkId) await this.ctx.setSinkId(id);
+      if (cur !== id) log(`ÁUDIO saída trocada para "${id || 'padrão'}"`);
+    } catch (e) {
+      log(`ÁUDIO erro ao trocar a saída para "${id || 'padrão'}": ${e.message}`);
+    }
   }
 
   // Chamado quando um dispositivo de áudio é conectado/desconectado ou o padrão do sistema muda:
@@ -131,6 +144,7 @@ export class MediaEngine {
     });
     this.micSource = this.ctx.createMediaStreamSource(this.mic);
     this.micSource.connect(this.node);
+    log(`ÁUDIO microfone: "${this.mic.getAudioTracks()[0]?.label || '?'}" (id pedido ${target || 'padrão'})`);
     // Lembra qual aparelho físico estava em uso, para detectar troca do padrão do sistema.
     this._micTarget = target;
     this._micGroup = devices.find((d) => d.kind === 'audioinput' && d.deviceId === (target || 'default'))?.groupId;
@@ -149,34 +163,41 @@ export class MediaEngine {
     await this._startMic();
   }
 
-  // Toca um tom curto na saída escolhida (botão "Testar" das Configurações).
-  async testSpeaker() {
-    await this.ensure();
-    if (this.ctx.state !== 'running') await this.ctx.resume().catch(() => {});
-    await this._applySink();
-    const target = this.sinkEl ? null : this.ctx.destination;
-    const o = this.ctx.createOscillator();
-    const g = this.ctx.createGain();
-    o.frequency.value = 660;
-    const t = this.ctx.currentTime;
-    g.gain.setValueAtTime(0, t);
-    g.gain.linearRampToValueAtTime(0.2, t + 0.03);
-    g.gain.linearRampToValueAtTime(0, t + 0.6);
-    o.connect(g);
-    if (target) g.connect(target);
-    else {
-      // Mesma rota das chamadas (par WebRTC com o elemento de áudio).
-      const dest = this.ctx.createMediaStreamDestination();
-      g.connect(dest);
+  // Toca um tom curto na saída escolhida (botão "Testar" das Configurações) e devolve o resultado
+  // ({ device, error }) para mostrar na tela.
+  async testSpeaker(chosen = this.settings.speakerId || '') {
+    const devices = await listDevices();
+    const sink = resolveDevice(devices, 'audiooutput', chosen, 'voice');
+    const device = devName(devices, 'audiooutput', sink);
+    const ctx = new AudioContext();
+    try {
+      if (ctx.state !== 'running') await ctx.resume();
+      const dest = ctx.createMediaStreamDestination();
+      const o = ctx.createOscillator();
+      const g = ctx.createGain();
+      o.frequency.value = 660;
+      const t = ctx.currentTime;
+      g.gain.setValueAtTime(0, t);
+      g.gain.linearRampToValueAtTime(0.25, t + 0.03);
+      g.gain.linearRampToValueAtTime(0, t + 0.8);
+      o.connect(g).connect(dest);
       const el = new Audio();
       el.srcObject = dest.stream;
-      const sink = resolveDevice(await listDevices(), 'audiooutput', this.settings.speakerId || '', 'voice');
-      if (el.setSinkId) await el.setSinkId(sink).catch(() => {});
-      await el.play().catch(() => {});
-      setTimeout(() => (el.srcObject = null), 900);
+      if (sink) await el.setSinkId(sink);
+      await el.play();
+      o.start(t);
+      o.stop(t + 0.85);
+      setTimeout(() => {
+        el.srcObject = null;
+        ctx.close().catch(() => {});
+      }, 1200);
+      log(`ÁUDIO teste do alto-falante em "${device}" (id ${sink || 'padrão'}): ok, sinkId=${el.sinkId || 'padrão'}`);
+      return { device, error: null };
+    } catch (e) {
+      ctx.close().catch(() => {});
+      log(`ÁUDIO teste do alto-falante em "${device}" (id ${sink || 'padrão'}) falhou: ${e.name} ${e.message}`);
+      return { device, error: `${e.name}: ${e.message}` };
     }
-    o.start(t);
-    o.stop(t + 0.65);
   }
 
   _onWorklet(m) {
@@ -196,11 +217,20 @@ export class MediaEngine {
     const s = this.settings;
     const { id, port } = await this.bridge.udpOpen({ range: [s.rtpMin || 10000, s.rtpMax || 20000] });
     const rtp = new RtpStream(this.bridge, id, port);
-    rtp.onAudio = (pcm) => this.node.port.postMessage({ type: 'rx', id: callId, pcm }, [pcm.buffer]);
+    rtp.onAudio = (pcm) => {
+      // Pico do áudio recebido (diagnóstico: mostra se o som do outro lado chega ao app).
+      let peak = rtp.stats.rxPeak || 0;
+      for (let i = 0; i < pcm.length; i += 8) peak = Math.max(peak, Math.abs(pcm[i]));
+      rtp.stats.rxPeak = peak;
+      this.node.port.postMessage({ type: 'rx', id: callId, pcm }, [pcm.buffer]);
+    };
     this.streams.set(callId, rtp);
     this.bySocket.set(id, rtp);
     this.node.port.postMessage({ type: 'add', id: callId });
-    await this._startMic().catch((err) => console.warn('Microfone indisponível', err));
+    await this._startMic().catch((err) => {
+      console.warn('Microfone indisponível', err);
+      log(`ÁUDIO microfone indisponível: ${err?.name || ''} ${err?.message || err}`);
+    });
     return rtp;
   }
 

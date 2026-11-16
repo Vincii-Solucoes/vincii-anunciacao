@@ -859,20 +859,13 @@ async function settingsModal() {
       navigator.mediaDevices.addEventListener?.('devicechange', refreshLists);
       const meter = startMicMeter(modal.querySelector('#mic-meter'), () => selMic.value, s);
       selMic.addEventListener('change', () => meter.restart());
+      const report = (r) =>
+        r.error ? toast(`Não tocou em "${r.device}" — ${r.error}`, 'error') : toast(`Tocando em: ${r.device}. Se não ouviu, escolha outro dispositivo na lista.`, 'ok');
       modal.querySelector('#test-spk').addEventListener('click', async () => {
-        if (phone.engine) {
-          const saved = s.speakerId;
-          s.speakerId = selSpk.value;
-          await phone.engine.testSpeaker().catch(() => {});
-          s.speakerId = saved;
-          phone.engine.setSpeaker(saved);
-        } else testRinger();
+        if (phone.engine) report(await phone.engine.testSpeaker(selSpk.value));
+        else report(await testRinger(selSpk.value));
       });
-      modal.querySelector('#test-ring').addEventListener('click', async () => {
-        await setRingerDevice(selRing.value);
-        testRinger();
-        setTimeout(() => setRingerDevice(s.ringerId), 1800);
-      });
+      modal.querySelector('#test-ring').addEventListener('click', async () => report(await testRinger(selRing.value)));
       $('#modal-root')._onClose = () => {
         offUpdate?.();
         navigator.mediaDevices.removeEventListener?.('devicechange', refreshLists);

@@ -1,5 +1,6 @@
 // Toques gerados via WebAudio (sem arquivos de áudio).
 import { listDevices, resolveDevice } from './media/devices.js';
+import { log } from './log.js';
 let ctx = null;
 
 function ensureCtx() {
@@ -22,10 +23,25 @@ export async function setRingerDevice(id) {
   await c.setSinkId(target).catch(() => {});
 }
 
-// Toca o toque uma vez (botão "Testar").
-export function testRinger() {
-  if (!ensureCtx()) return;
-  PATTERNS.ring.play(ctx.currentTime + 0.02);
+// Toca o toque uma vez (botão "Testar") e devolve { device, error }.
+export async function testRinger(chosen = ringerSink) {
+  const c = ensureCtx();
+  if (!c) return { device: '?', error: 'WebAudio indisponível' };
+  const devices = await listDevices();
+  const target = resolveDevice(devices, 'audiooutput', chosen, 'ring');
+  const device = devices.find((d) => d.kind === 'audiooutput' && d.deviceId === (target || 'default'))?.label || target || 'padrão';
+  try {
+    if (c.state !== 'running') await c.resume();
+    if (c.setSinkId) await c.setSinkId(target);
+    PATTERNS.ring.play(c.currentTime + 0.02);
+    log(`ÁUDIO teste do toque em "${device}": ok (estado ${c.state}, sinkId ${c.sinkId || 'padrão'})`);
+    return { device, error: null };
+  } catch (e) {
+    log(`ÁUDIO teste do toque em "${device}" falhou: ${e.name} ${e.message}`);
+    return { device, error: `${e.name}: ${e.message}` };
+  } finally {
+    setTimeout(() => setRingerDevice(ringerSink), 2000);
+  }
 }
 
 // Navegadores só liberam áudio após um gesto do usuário.

@@ -694,7 +694,7 @@ export class Phone extends EventTarget {
       duration: call.answeredAt ? Math.round((Date.now() - call.answeredAt) / 1000) : 0,
     });
     const st = call.rtpStats;
-    log(`CHAMADA ${call.direction === 'in' ? 'recebida de' : 'para'} ${call.number} (${line?.account.name || ''}): ${result}${call.cause ? ` — ${call.cause}` : ''}${st ? ` | RTP enviados ${st.tx}, recebidos ${st.rx}` : ''}`);
+    log(`CHAMADA ${call.direction === 'in' ? 'recebida de' : 'para'} ${call.number} (${line?.account.name || ''}): ${result}${call.cause ? ` — ${call.cause}` : ''}${st ? ` | RTP enviados ${st.tx}, recebidos ${st.rx}, pico do áudio recebido ${(st.rxPeak || 0).toFixed(2)}${st.dropped ? `, descartados ${st.dropped}` : ''}` : ''}`);
     this.emit('ended', { call, result });
     this.changed();
   }
